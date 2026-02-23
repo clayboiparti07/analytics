@@ -20,7 +20,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 
 # Install system dependencies for building Python packages
 RUN apt-get update && apt-get install -y \
@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ .
 
 # Copy frontend static files from builder stage
 COPY --from=frontend-builder /frontend/out ./static_frontend
@@ -38,5 +38,5 @@ COPY --from=frontend-builder /frontend/out ./static_frontend
 # Expose port (default 5000)
 EXPOSE 5000
 
-# Run the application
-CMD ["python", "app.py"]
+# Run the application with gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "app:app"]

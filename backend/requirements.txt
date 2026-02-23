@@ -6,6 +6,7 @@ click==8.2.1
 deprecation==2.1.0
 flask==3.1.2
 flask-cors==6.0.1
+gunicorn==23.0.0
 h11==0.16.0
 h2==4.3.0
 hpack==4.1.0
