@@ -89,8 +89,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 p-4">
-      <Card className="w-full max-w-md shadow-2xl">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md shadow-2xl border border-border">
         <CardHeader className="space-y-2 text-center">
           <CardTitle className="text-3xl font-bold">Analytics Dashboard</CardTitle>
           <CardDescription>
