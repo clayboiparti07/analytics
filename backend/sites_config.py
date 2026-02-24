@@ -7,16 +7,7 @@ SITES = {
         "url": None,  # None means all sites
         "description": "Analytics from all tracked sites"
     },
-    "localhost": {
-        "name": "Localhost",
-        "url": "http://localhost:5000",
-        "description": "Local development site"
-    },
-    "localhost_3000": {
-        "name": "Localhost (Port 3000)",
-        "url": "http://localhost:3000",
-        "description": "Frontend dev server"
-    },
+    
     "sanjaya": {
         "name": "Sanjaya",
         "url": "https://rbg.iitm.ac.in/sanjaya/",
