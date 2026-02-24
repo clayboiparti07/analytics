@@ -1,7 +1,7 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dateutil.parser import parse as date_parse
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template, send_from_directory
@@ -84,7 +84,7 @@ def get_analytics():
 
         # Helper for dynamic period logic
         period = request.args.get('period', 'day')
-        now = datetime.now()
+        now = datetime.now(timezone.utc)  # Use UTC timezone-aware datetime
         
         # Defaults
         granularity = 'day'
@@ -93,7 +93,6 @@ def get_analytics():
         if not params['start_date_filter'] and not params['end_date_filter']:
             if period == 'day':
                 granularity = 'hour'
-                from datetime import timedelta
                 # Default "24h" view - set end_date to end of today
                 start_date_filter = (now - timedelta(days=1)).isoformat()
                 end_date_filter = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
@@ -102,7 +101,6 @@ def get_analytics():
                 
             elif period == 'week':
                 granularity = 'day'
-                from datetime import timedelta
                 # 7 days view - set end_date to end of today
                 start_date_filter = (now - timedelta(days=7)).isoformat()
                 end_date_filter = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
@@ -111,7 +109,6 @@ def get_analytics():
                 
             elif period == 'month':
                 granularity = 'day'
-                from datetime import timedelta
                 # 30 days view - set end_date to end of today
                 start_date_filter = (now - timedelta(days=30)).isoformat()
                 end_date_filter = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
