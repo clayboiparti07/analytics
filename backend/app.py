@@ -94,25 +94,27 @@ def get_analytics():
             if period == 'day':
                 granularity = 'hour'
                 from datetime import timedelta
-                # Default "24h" view
+                # Default "24h" view - set end_date to end of today
                 start_date_filter = (now - timedelta(days=1)).isoformat()
-                end_date_filter = now.isoformat()
+                end_date_filter = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
                 params['start_date_filter'] = start_date_filter
                 params['end_date_filter'] = end_date_filter
                 
             elif period == 'week':
                 granularity = 'day'
                 from datetime import timedelta
+                # 7 days view - set end_date to end of today
                 start_date_filter = (now - timedelta(days=7)).isoformat()
-                end_date_filter = now.isoformat()
+                end_date_filter = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
                 params['start_date_filter'] = start_date_filter
                 params['end_date_filter'] = end_date_filter
                 
             elif period == 'month':
                 granularity = 'day'
                 from datetime import timedelta
+                # 30 days view - set end_date to end of today
                 start_date_filter = (now - timedelta(days=30)).isoformat()
-                end_date_filter = now.isoformat()
+                end_date_filter = now.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
                 params['start_date_filter'] = start_date_filter
                 params['end_date_filter'] = end_date_filter
 
