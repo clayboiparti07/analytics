@@ -161,6 +161,10 @@ def get_analytics():
 
         params['granularity'] = granularity
         
+        # Debug logging
+        print(f"DEBUG API Request - Period: {period}")
+        print(f"DEBUG Params: start_date={params['start_date_filter']}, end_date={params['end_date_filter']}, granularity={granularity}")
+        
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
@@ -184,6 +188,10 @@ def get_analytics():
         
         result = cur.fetchone()
         data = result['data'] if result else {}
+        
+        print(f"DEBUG Result data keys: {list(data.keys()) if data else 'Empty'}")
+        print(f"DEBUG Result charts keys: {list(data.get('charts', {}).keys()) if data else 'No charts'}")
+        print(f"DEBUG Stats: {data.get('stats', {}) if data else 'No stats'}")
 
         if 'stats' in data:
             stats = data['stats']
