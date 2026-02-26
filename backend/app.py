@@ -20,6 +20,13 @@ load_dotenv()
 app = Flask(__name__, static_folder='static_frontend', static_url_path='')
 CORS(app, origins="*", allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "OPTIONS"])
 
+# ensure SQL definitions are applied once the app starts handling
+# requests.  this keeps the Docker init script from being the only place
+# the function gets updated.
+@app.before_first_request
+def _init_db():
+    ensure_db_functions()
+
 @app.route('/')
 def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
@@ -52,6 +59,15 @@ DB_PASS = os.environ.get("DB_PASS", "trac_password")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 
 def get_db_connection():
+    """Return a new connection to the analytics database.
+
+    We don't automatically load the SQL schema here because the Flask
+    application may be started in environments where the database is
+    already initialised.  The helper below (``ensure_db_functions``) takes
+    care of applying the latest version of the stored procedure on first
+    request, which means deployments don't have to remember to re‑run the
+    SQL file manually every time it changes.
+    """
     conn = psycopg2.connect(
         host=DB_HOST,
         database=DB_NAME,
@@ -74,6 +90,30 @@ def get_country_code(country_name):
     except Exception:
         return None
     return None
+
+
+def ensure_db_functions():
+    """Load/refresh database-side SQL (visitors table & analytics function).
+
+    This is safe to call multiple times because the SQL uses
+    "CREATE OR REPLACE".  We invoke it from ``before_first_request`` so that
+    the stored procedure is always up‑to‑date with whatever version is checked
+    into source control.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        sql_path = os.path.join(os.path.dirname(__file__), 'supabase_analytics_function.sql')
+        with open(sql_path, 'r', encoding='utf-8') as f:
+            cur.execute(f.read())
+        conn.commit()
+        app.logger.info("Database functions ensured/up-to-date.")
+    except Exception as e:
+        app.logger.error(f"Error ensuring DB functions: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 
 def token_required(f):
@@ -209,6 +249,7 @@ def get_analytics():
         # Handle site filter
         site_filter = request.args.get('site_filter', 'all')
         site_url = get_site_url(site_filter) if site_filter else None
+        app.logger.info(f"Resolved site_filter='{site_filter}' to site_url='{site_url}'")
         if site_url:
             # If a specific site is selected, filter by page_visited.  we lowercase
             # the pattern here to match the ILIKE used inside the stored function
