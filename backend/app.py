@@ -617,14 +617,50 @@ def get_app_users():
     try:
         app.logger.info(f"Proxying request to {upstream_url} with dates: {start_date} to {end_date}")
         ssl_ctx = ssl.create_default_context()
-        with urllib.request.urlopen(req, context=ssl_ctx, timeout=20) as resp:
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=30) as resp:
             raw = resp.read().decode('utf-8')
+
         app.logger.info(f"Upstream response received ({len(raw)} bytes)")
-        data = _json.loads(raw)
-        return jsonify(data)
+        upstream = _json.loads(raw)
+
+        # Normalise upstream response into a `users` array the frontend can consume
+        users = []
+        if isinstance(upstream, dict):
+            if isinstance(upstream.get('details'), list):
+                for d in upstream['details']:
+                    users.append({
+                        'userid': d.get('userid'),
+                        'user_name': d.get('rep_name') or d.get('name') or d.get('username') or '',
+                        'user_role': d.get('user_role') or d.get('role'),
+                        'district': d.get('district_name') or d.get('district'),
+                        'police_station': d.get('police_station') or d.get('ps') or None,
+                        'last_login': d.get('last_login'),
+                        'phone': d.get('phone_no'),
+                        'raw': d
+                    })
+                return jsonify({'users': users}), 200
+
+            for key in ('users', 'data', 'results'):
+                if isinstance(upstream.get(key), list):
+                    return jsonify({'users': upstream.get(key)}), 200
+
+        if isinstance(upstream, list):
+            return jsonify({'users': upstream}), 200
+
+        # Fallback: upstream returned something unexpected — return it wrapped
+        return jsonify({'users': [], 'raw': upstream}), 200
+
+    except urllib.error.HTTPError as e:
+        body = ''
+        try:
+            body = e.read().decode('utf-8')
+        except Exception:
+            body = str(e)
+        app.logger.error(f'Upstream HTTPError fetching app-users ({app_slug}): {e} body={body}')
+        return jsonify({'error': f'Upstream HTTPError {getattr(e, "code", "")}', 'detail': body, 'users': []}), 502
     except Exception as e:
         app.logger.error(f'Error fetching app-users ({app_slug}): {e}', exc_info=True)
-        return jsonify({'error': str(e), 'users': []}), 500
+        return jsonify({'error': str(e), 'users': []}), 502
 
 
 if __name__ == '__main__':
