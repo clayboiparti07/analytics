@@ -42,59 +42,80 @@ export default function Districts({
 }: DistrictsProps) {
   // ── State ──────────────────────────────────────────────────────────────
   const [selectedApp, setSelectedApp] = useState("fps");
-  const [appUsers, setAppUsers]       = useState<AppUser[]>([]);
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+  const [allUsers, setAllUsers]       = useState<AppUser[]>([]);
+  const [appUsers, setAppUsers]        = useState<AppUser[]>([]); // visible on current page
+  const [loading, setLoading]          = useState(false);
+  const [error, setError]              = useState<string | null>(null);
+  const [perPage, setPerPage]          = useState(10);
+  const [page, setPage]                = useState(1);
 
   // ── Local search/filter inputs ─────────────────────────────────────────
   const [nameSearch,     setNameSearch]     = useState("");
   const [districtSearch, setDistrictSearch] = useState("");
   const [psSearch,       setPsSearch]       = useState("");
 
-  // ── Fetch from external API via backend proxy ──────────────────────────
-  // Re-runs whenever the app, period, or custom date range changes.
+  // ── Fetch directly from external FSA API ──────────────────────────
+  // re-run whenever the app, period, or custom dates change.
   useEffect(() => {
     const fetchUsers = async () => {
       setLoading(true);
       setError(null);
+      setPage(1);
       try {
-        const params = new URLSearchParams();
-        params.set("app", selectedApp);
-        params.set("period", selectedPeriod);
-        // Custom date range overrides the period on the backend
-        if (filters.start_date_filter) params.set("start_date", filters.start_date_filter);
-        if (filters.end_date_filter)   params.set("end_date",   filters.end_date_filter);
+        const body: any = { app: selectedApp, period: selectedPeriod };
+        if (filters.start_date_filter) body.start_date = filters.start_date_filter;
+        if (filters.end_date_filter)   body.end_date   = filters.end_date_filter;
 
-        const res = await fetch(`/api/app-users?${params.toString()}`);
-        // backend now always returns 200; we capture HTTP failure anyway
+        const res = await fetch('https://coers.iitm.ac.in/fsa/user_det', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
-        // if proxy returned an error message, propagate it so UI can show it
         if (json.error) {
           throw new Error(json.error || json.status || 'Unknown error');
         }
-        // sometimes upstream returns the error inside `raw.status`
-        if (json.raw && typeof json.raw.status === 'string') {
-          throw new Error(json.raw.status);
+        if (json.status && typeof json.status === 'string') {
+          throw new Error(json.status);
         }
 
-        // Normalise: accept plain array, {users:[]}, {data:[]}, {results:[]}
-        const list: AppUser[] = Array.isArray(json)
-          ? json
-          : (json.users ?? json.data ?? json.results ?? []);
-        setAppUsers(list);
+        let list: AppUser[] = [];
+        if (Array.isArray(json.details)) {
+          list = json.details.map((d: any) => ({
+            userid: d.userid,
+            user_name: d.rep_name || d.name || '',
+            user_role: d.user_role,
+            district: d.district_name,
+            police_station: d.police_station,
+            last_login: d.last_login,
+            phone: d.phone_no,
+            raw: d,
+          }));
+        } else if (Array.isArray(json)) {
+          list = json;
+        }
+
+        setAllUsers(list);
+        setAppUsers(list.slice(0, perPage));
       } catch (e: any) {
         setError(e.message);
+        setAllUsers([]);
         setAppUsers([]);
       } finally {
         setLoading(false);
       }
     };
     fetchUsers();
-  }, [selectedApp, selectedPeriod, filters.start_date_filter, filters.end_date_filter]);
+  }, [selectedApp, selectedPeriod, filters.start_date_filter, filters.end_date_filter, perPage]);
 
-  // ── Client-side filtering on the fetched rows ──────────────────────────
+  // keep visible portion in sync with paging
+  useEffect(() => {
+    setAppUsers(allUsers.slice(0, page * perPage));
+  }, [allUsers, page, perPage]);
+
+  // ── Client-side filtering on the visible rows ──────────────────────────
   const filteredUsers = useMemo(() => {
     return appUsers.filter((u) => {
       const name = getField(u, "user_name", "name", "username").toLowerCase();
@@ -165,6 +186,30 @@ export default function Districts({
         {!loading && error && (
           <div className="text-sm text-destructive py-2">Error: {error}</div>
         )}
+        {/* pagination controls */}
+        <div className="flex items-center gap-2 mb-2">
+          <label className="text-xs">Per page:</label>
+          <select
+            value={perPage}
+            onChange={(e) => setPerPage(Number(e.target.value))}
+            className="text-sm"
+          >
+            <option value={10}>10</option>
+            <option value={50}>50</option>
+          </select>
+          <button
+            onClick={() => {
+              const next = page + 1;
+              const slice = allUsers.slice(0, next * perPage);
+              setAppUsers(slice);
+              setPage(next);
+            }}
+            disabled={page * perPage >= allUsers.length}
+            className="ml-auto px-2 py-1 text-xs border rounded"
+          >
+            Load more
+          </button>
+        </div>
 
         {/* ── Table ── */}
         {!loading && !error && (

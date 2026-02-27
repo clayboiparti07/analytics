@@ -556,12 +556,14 @@ APP_USER_ENDPOINTS = {
 }
 
 
-@app.route('/api/app-users', methods=['GET', 'OPTIONS'])
+@app.route('/api/app-users', methods=['GET', 'POST', 'OPTIONS'])
 def get_app_users():
     """Proxy request to the FSA user-detail endpoint.
 
-    Query params
-    ------------
+    Can be called with either GET (query parameters) or POST (JSON body).
+
+    Parameters (both methods)
+    --------------------------------
     app        : app slug (default: fps)
     period     : day | week | month | all (default: day)
     start_date : ISO date string – overrides period-based calculation
@@ -570,11 +572,19 @@ def get_app_users():
     if request.method == 'OPTIONS':
         return '', 200
 
-    app_slug = request.args.get('app', 'fps').lower()
-    period = request.args.get('period', 'day')
-    # start_date and end_date may be supplied by the client; default to empty strings
-    start_date = request.args.get('start_date', '') or ''
-    end_date = request.args.get('end_date', '') or ''
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        app_slug = str(data.get('app', 'fps')).lower()
+        period = str(data.get('period', 'day'))
+        start_date = data.get('start_date', '') or ''
+        end_date = data.get('end_date', '') or ''
+    else:
+        # GET
+        app_slug = request.args.get('app', 'fps').lower()
+        period = request.args.get('period', 'day')
+        # start_date and end_date may be supplied by the client; default to empty strings
+        start_date = request.args.get('start_date', '') or ''
+        end_date = request.args.get('end_date', '') or ''
 
     # We used to convert period into specific start/end dates, but the
     # upstream service handles empty strings itself.  Sending computed dates
