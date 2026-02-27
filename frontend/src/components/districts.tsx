@@ -66,8 +66,18 @@ export default function Districts({
         if (filters.end_date_filter)   params.set("end_date",   filters.end_date_filter);
 
         const res = await fetch(`/api/app-users?${params.toString()}`);
+        // backend now always returns 200; we capture HTTP failure anyway
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
+
+        // if proxy returned an error message, propagate it so UI can show it
+        if (json.error) {
+          throw new Error(json.error || json.status || 'Unknown error');
+        }
+        // sometimes upstream returns the error inside `raw.status`
+        if (json.raw && typeof json.raw.status === 'string') {
+          throw new Error(json.raw.status);
+        }
 
         // Normalise: accept plain array, {users:[]}, {data:[]}, {results:[]}
         const list: AppUser[] = Array.isArray(json)

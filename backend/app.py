@@ -657,10 +657,12 @@ def get_app_users():
         except Exception:
             body = str(e)
         app.logger.error(f'Upstream HTTPError fetching app-users ({app_slug}): {e} body={body}')
-        return jsonify({'error': f'Upstream HTTPError {getattr(e, "code", "")}', 'detail': body, 'users': []}), 502
+        # Return 200 so frontend still gets a JSON payload it can display;
+        # the caller can look at "error" property.
+        return jsonify({'error': f'Upstream HTTPError {getattr(e, "code", "")}', 'detail': body, 'users': []}), 200
     except Exception as e:
         app.logger.error(f'Error fetching app-users ({app_slug}): {e}', exc_info=True)
-        return jsonify({'error': str(e), 'users': []}), 502
+        return jsonify({'error': str(e), 'users': []}), 200
 
 
 if __name__ == '__main__':
