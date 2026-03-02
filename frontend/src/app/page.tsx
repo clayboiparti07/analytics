@@ -95,13 +95,10 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    // Districts tab is completely independent — it fetches its own data from
-    // a separate API endpoint.  Skip the global analytics fetch when it is active.
-    if (activeTab === 'districts') return;
     loadData(filters);
     const interval = setInterval(() => loadData(filters), 30000);
     return () => clearInterval(interval);
-  }, [filters, selectedPeriod, selectedSite, activeTab]);
+  }, [filters, selectedPeriod, selectedSite]);
 
   const handleFiltersChange = (newFilters: FiltersState) => {
     setFilters(newFilters);
@@ -121,6 +118,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Header />
+      {/*
       <main className="max-w-7xl mx-auto p-2 md:p-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <h1 className="text-3xl font-bold tracking-tight">Analytics Dashboard</h1>
@@ -188,7 +186,7 @@ export default function DashboardPage() {
           meta={data?.meta || { distinct_countries: [], distinct_devices: [], distinct_browsers: [] }}
           isCustomPeriod={selectedPeriod === 'custom'}
         />
-
+  */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="hidden md:block">
             <TabsList className="grid w-full grid-cols-7 text-xs">
@@ -209,17 +207,27 @@ export default function DashboardPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-full">
-                <DropdownMenuItem onSelect={() => setActiveTab("analytics")}>Analytics</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setActiveTab("timeline")}>Traffic Timeline</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setActiveTab("global")}>Global Visitor Distribution</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setActiveTab("city")}>City Distribution</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setActiveTab("districts")}>Districts</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setActiveTab("city")}>City Distribution</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setActiveTab("pages")}>Top Pages</DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setActiveTab("visitors")}>Recent Visitor Activity</DropdownMenuItem>
+
+             {/*     <DropdownMenuItem onSelect={() => setActiveTab("analytics")}>Analytics</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setActiveTab("timeline")}>Traffic Timeline</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setActiveTab("global")}>Global Visitor Distribution</DropdownMenuItem> */}
+
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <TabsContent value="analytics">
+          <TabsContent value="districts">
+            <Districts
+              selectedSite={selectedSite}
+              selectedPeriod={selectedPeriod}
+              filters={filters}
+            />
+          </TabsContent>
+          
+         {/* <TabsContent value="analytics">
             <AnalyticsChartsGrid chartsData={data?.charts || { by_device: [], by_browser: [] }} />
           </TabsContent>
           <TabsContent value="timeline">
@@ -227,12 +235,10 @@ export default function DashboardPage() {
           </TabsContent>
           <TabsContent value="global">
             <GlobalVisitorChart data={data?.charts?.by_country || []} />
-          </TabsContent>
+          </TabsContent> */}
+
           <TabsContent value="city">
             <CityDistributionChart data={data?.charts?.by_city || []} />
-          </TabsContent>
-          <TabsContent value="districts">
-            <Districts />
           </TabsContent>
           <TabsContent value="pages">
             <TopPagesChart data={data?.charts?.by_page || []} />

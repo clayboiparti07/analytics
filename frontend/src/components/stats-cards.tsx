@@ -40,7 +40,7 @@ export interface StatsGridProps {
 
 export function StatsGrid({ stats }: StatsGridProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-4 md:mb-12">
+   {/* <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-4 md:mb-12">
       <StatCard
         title="Total Visitors"
         value={stats?.total_visitors || "-"}
@@ -61,6 +61,6 @@ export function StatsGrid({ stats }: StatsGridProps) {
         value={stats?.avg_time_on_page || "-"}
         icon={<Clock className="h-6 w-6 text-muted-foreground" />}
       />
-    </div>
+    </div> */} 
   );
 }
