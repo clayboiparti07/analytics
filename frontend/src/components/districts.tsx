@@ -38,9 +38,9 @@ const APP_OPTIONS = [
     payload: (start: string, end: string) => ({ start_date: start, end_date: end }),
   },
   {
-    value:   "sanjaya",
-    label:   "Sanjaya App",
-    url:     "https://coers.iitm.ac.in/fsa/dss_user_det",
+    value:   "TPL",
+    label:   "TPL App",
+    url:     "https://coers.iitm.ac.in/baseline/export_all_data",
     payload: (start: string, end: string) => ({ start_date: start, end_date: end }),
   },
   // ── add more apps below this line ──────────────────────────────────────────
