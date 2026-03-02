@@ -219,11 +219,33 @@ export default function Districts() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
+        // Check if response indicates failure
+        if (json.error) throw new Error(json.error);
+        if (json.status && typeof json.status === 'string' && json.status.toLowerCase().includes('failed')) {
+          throw new Error(json.status);
+        }
+
         // Use the per-app extract fn to pull the correct array from the response
         const raw: AppUser[] = cfg.extract(json);
-        setAllUsers(raw.map(cfg.normalise));
+        if (!Array.isArray(raw)) {
+          console.error(`[${cfg.label}] Extract returned non-array:`, raw);
+          throw new Error(`Extract failed: returned ${typeof raw}`);
+        }
+        
+        const normalized = raw.map((u) => {
+          try {
+            return cfg.normalise(u);
+          } catch (err) {
+            console.error(`[${cfg.label}] Normalise error on user:`, u, err);
+            throw err;
+          }
+        });
+        
+        console.log(`[${cfg.label}] Loaded ${normalized.length} users`);
+        setAllUsers(normalized);
       } catch (e: any) {
-        setError(e.message);
+        console.error(`[${selectedApp}] Fetch failed:`, e);
+        setError(e.message || String(e));
         setAllUsers([]);
       } finally {
         setLoading(false);
