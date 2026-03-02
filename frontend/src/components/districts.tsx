@@ -71,7 +71,7 @@ const APP_OPTIONS: {
       user_role:      d.user_role      || d.role         || "",
       district:       d.district_name  || d.district     || "",
       police_station: d.police_station || d.ps           || d.policeStation || "",
-      last_login:     d.last_login.replace(".")     || d.last_seen    || d.lastLogin     || "",
+      last_login:     (d.last_login || d.last_seen || d.lastLogin || "").split(" ")[0],
     }),
   },
 
@@ -115,7 +115,7 @@ const APP_OPTIONS: {
       district:    d.district_name || d.district        || "",
       stakeholder: d.stakeholder   || d.designation     || "",
       role:        d._role         || d.role            || "",
-      last_login:  d.last_login.    || d.last_seen       || "",
+      last_login:  (d.last_login || d.last_seen || "").split(" ")[0],
     }),
   },
 
