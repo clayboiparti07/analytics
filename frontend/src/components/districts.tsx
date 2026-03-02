@@ -24,6 +24,7 @@ type ColDef = { key: string; label: string };
 //   label    : name shown in the dropdown
 //   url      : POST endpoint that returns user data
 //   payload  : function → JSON body sent to the API (adjust keys per app)
+//   extract  : function → pulls the raw array out of the API response
 //   loginKey : field name(s) that hold the last-login timestamp (for period filter)
 //   columns  : ordered list of columns to show in the table
 //   normalise: function that maps a raw API row → a flat AppUser object
@@ -36,6 +37,7 @@ const APP_OPTIONS: {
   label: string;
   url: string;
   payload: (start: string, end: string) => Record<string, string>;
+  extract: (json: any) => AppUser[];
   loginKey: string[];
   columns: ColDef[];
   normalise: (raw: AppUser) => AppUser;
@@ -46,6 +48,7 @@ const APP_OPTIONS: {
     label:    "FPS App",
     url:      "https://coers.iitm.ac.in/fsa/user_det",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
+    extract:  (json) => Array.isArray(json) ? json : (Array.isArray(json.details) ? json.details : []),
     loginKey: ["last_login", "last_seen", "lastLogin", "last_active"],
     columns: [
       { key: "user_name",      label: "User Name"      },
@@ -55,11 +58,11 @@ const APP_OPTIONS: {
       { key: "last_login",     label: "Last Login"     },
     ],
     normalise: (d) => ({
-      user_name:      d.rep_name      || d.user_name   || d.name     || d.username || "",
-      user_role:      d.user_role     || d.role        || "",
-      district:       d.district_name || d.district    || "",
-      police_station: d.police_station|| d.ps          || d.policeStation || "",
-      last_login:     d.last_login    || d.last_seen   || d.lastLogin || "",
+      user_name:      d.rep_name      || d.user_name    || d.name          || d.username || "",
+      user_role:      d.user_role     || d.role         || "",
+      district:       d.district_name || d.district     || "",
+      police_station: d.police_station|| d.ps           || d.policeStation || "",
+      last_login:     d.last_login    || d.last_seen    || d.lastLogin     || "",
     }),
   },
 
@@ -69,6 +72,7 @@ const APP_OPTIONS: {
     label:    "Sanjaya App",
     url:      "https://coers.iitm.ac.in/fsa/dss_user_det",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
+    extract:  (json) => Array.isArray(json) ? json : (Array.isArray(json.details) ? json.details : []),
     loginKey: ["last_login", "last_seen", "lastLogin", "last_active"],
     columns: [
       { key: "user_name",  label: "User Name"  },
@@ -77,7 +81,7 @@ const APP_OPTIONS: {
       { key: "last_login", label: "Last Login" },
     ],
     normalise: (d) => ({
-      user_name:  d.rep_name      || d.user_name || d.name     || d.username || "",
+      user_name:  d.rep_name      || d.user_name || d.name      || d.username || "",
       user_role:  d.user_role     || d.role      || "",
       district:   d.district_name || d.district  || "",
       last_login: d.last_login    || d.last_seen || d.lastLogin || "",
@@ -85,12 +89,14 @@ const APP_OPTIONS: {
   },
 
   // ── TPL App ────────────────────────────────────────────────────────────────
+  // Response shape: { details: { hospitals: [...], admins: [...] }, ... }
   {
     value:    "tpl",
     label:    "TPL App",
     url:      "https://coers.iitm.ac.in/baseline/export_all_data",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
-    loginKey: [], // TPL has no last_login field — period filter is skipped
+    extract:  (json) => Array.isArray(json?.details?.hospitals) ? json.details.hospitals : [],
+    loginKey: [], // no last_login field — period filter is skipped for TPL
     columns: [
       { key: "user_id",       label: "User ID"       },
       { key: "state",         label: "State"         },
@@ -99,9 +105,9 @@ const APP_OPTIONS: {
     ],
     normalise: (d) => ({
       user_id:       d.user_id       || String(d.userid ?? "") || "",
-      state:         d.state_name    || d.state               || "",
-      district:      d.district_name || d.district            || "",
-      hospital_name: d.hospname      || d.hospital_name       || d.hospital || "",
+      state:         d.state_name    || d.state                || "",
+      district:      d.district_name || d.district             || "",
+      hospital_name: d.hospname      || d.hospital_name        || d.hospital || "",
     }),
   },
 
@@ -184,16 +190,9 @@ export default function Districts() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
-        // Extract the raw array from whatever shape the API returns
-        let raw: AppUser[] = [];
-        if (Array.isArray(json)) {
-          raw = json;
-        } else {
-          for (const key of ["details", "users", "data", "results"]) {
-            if (Array.isArray(json[key])) { raw = json[key]; break; }
-          }
-        }
-        // Apply per-app normalise function so columns always match the config
+        // Use the per-app extract fn to pull the correct array from the response
+        const raw: AppUser[] = appConfig.extract(json);
+        // Apply per-app normalise so column keys always match the config
         setAllUsers(raw.map(appConfig.normalise));
       } catch (e: any) {
         setError(e.message);
