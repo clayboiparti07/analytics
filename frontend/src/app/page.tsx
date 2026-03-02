@@ -95,10 +95,13 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
+    // Districts tab is completely independent — it fetches its own data from
+    // a separate API endpoint.  Skip the global analytics fetch when it is active.
+    if (activeTab === 'districts') return;
     loadData(filters);
     const interval = setInterval(() => loadData(filters), 30000);
     return () => clearInterval(interval);
-  }, [filters, selectedPeriod, selectedSite]);
+  }, [filters, selectedPeriod, selectedSite, activeTab]);
 
   const handleFiltersChange = (newFilters: FiltersState) => {
     setFilters(newFilters);
@@ -229,11 +232,7 @@ export default function DashboardPage() {
             <CityDistributionChart data={data?.charts?.by_city || []} />
           </TabsContent>
           <TabsContent value="districts">
-            <Districts
-              selectedSite={selectedSite}
-              selectedPeriod={selectedPeriod}
-              filters={filters}
-            />
+            <Districts />
           </TabsContent>
           <TabsContent value="pages">
             <TopPagesChart data={data?.charts?.by_page || []} />

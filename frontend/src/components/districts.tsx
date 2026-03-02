@@ -12,11 +12,7 @@ type AppUser   = { [k: string]: any };
 type SortDir   = "asc" | "desc";
 type LocalPeriod = "24h" | "7d" | "30d" | "all" | "custom";
 
-interface DistrictsProps {
-  selectedSite?: string;
-  selectedPeriod?: string; // global period — ignored; component manages its own
-  filters?: { start_date_filter?: string; end_date_filter?: string; [k: string]: string | undefined };
-}
+
 
 // ── App registry — add one line per new app ────────────────────────────────
 const APP_OPTIONS = [
@@ -62,7 +58,7 @@ function periodToDates(period: LocalPeriod): { start: string; end: string } {
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
-export default function Districts(_props: DistrictsProps) {
+export default function Districts() {
   // ── State ─────────────────────────────────────────────────────────────
   const [selectedApp,    setSelectedApp]    = useState("fps");
   const [allUsers,       setAllUsers]       = useState<AppUser[]>([]);

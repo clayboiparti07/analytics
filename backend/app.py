@@ -1,8 +1,6 @@
 import os
-import ssl
 import threading
-import urllib.request
-import json as _json
+import httpx
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 from datetime import datetime, timezone, timedelta
@@ -576,13 +574,11 @@ def get_app_users():
     if request.method == 'POST':
         data = request.get_json(silent=True) or {}
         app_slug = str(data.get('app', 'fps')).lower()
-        period = str(data.get('period', 'day'))
         start_date = data.get('start_date', '') or ''
         end_date = data.get('end_date', '') or ''
     else:
         # GET
         app_slug = request.args.get('app', 'fps').lower()
-        period = request.args.get('period', 'day')
         # start_date and end_date may be supplied by the client; default to empty strings
         start_date = request.args.get('start_date', '') or ''
         end_date = request.args.get('end_date', '') or ''
@@ -596,43 +592,29 @@ def get_app_users():
     if not upstream_url:
         return jsonify({'error': f'Unknown app: {app_slug}', 'users': []}), 400
 
-    payload = _json.dumps({'start_date': start_date, 'end_date': end_date}).encode('utf-8')
-    # log what we are sending so troubleshooting is easier
-    app.logger.info(f"app-users payload start={start_date!r} end={end_date!r} period={period}")
-    
-    # Comprehensive headers to match browser request
-    headers = {
-        'content-type': 'application/json',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'DNT': '1',
-        'Pragma': 'no-cache',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="120", "Chromium";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"'
-    }
-    
-    req = urllib.request.Request(
-        upstream_url,
-        data=payload,
-        headers=headers,
-        method='POST',
-    )
+    body_data = {'start_date': start_date, 'end_date': end_date}
+    app.logger.info(f"app-users → {upstream_url}  start={start_date!r} end={end_date!r}")
 
     try:
-        app.logger.info(f"Proxying request to {upstream_url} with dates: {start_date} to {end_date}")
-        ssl_ctx = ssl.create_default_context()
-        with urllib.request.urlopen(req, context=ssl_ctx, timeout=30) as resp:
-            raw = resp.read().decode('utf-8')
-
-        app.logger.info(f"Upstream response received ({len(raw)} bytes)")
-        upstream = _json.loads(raw)
+        # verify=False: many internal/institutional servers use self-signed certs;
+        # disabling verification prevents SSL handshake timeouts on the proxy side.
+        with httpx.Client(verify=False, timeout=30) as client:
+            resp = client.post(
+                upstream_url,
+                json=body_data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': '*/*',
+                    'User-Agent': (
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                        'AppleWebKit/537.36 (KHTML, like Gecko) '
+                        'Chrome/144.0.0.0 Safari/537.36'
+                    ),
+                },
+            )
+        resp.raise_for_status()
+        upstream = resp.json()
+        app.logger.info(f"Upstream OK ({len(resp.content)} bytes)")
 
         # Normalise upstream response into a `users` array the frontend can consume
         users = []
@@ -640,37 +622,32 @@ def get_app_users():
             if isinstance(upstream.get('details'), list):
                 for d in upstream['details']:
                     users.append({
-                        'userid': d.get('userid'),
-                        'user_name': d.get('rep_name') or d.get('name') or d.get('username') or '',
-                        'user_role': d.get('user_role') or d.get('role'),
-                        'district': d.get('district_name') or d.get('district'),
+                        'userid':         d.get('userid'),
+                        'user_name':      d.get('rep_name') or d.get('name') or d.get('username') or '',
+                        'user_role':      d.get('user_role') or d.get('role'),
+                        'district':       d.get('district_name') or d.get('district'),
                         'police_station': d.get('police_station') or d.get('ps') or None,
-                        'last_login': d.get('last_login'),
-                        'phone': d.get('phone_no'),
-                        'raw': d
+                        'last_login':     d.get('last_login'),
+                        'phone':          d.get('phone_no'),
                     })
                 return jsonify({'users': users}), 200
 
             for key in ('users', 'data', 'results'):
                 if isinstance(upstream.get(key), list):
-                    return jsonify({'users': upstream.get(key)}), 200
+                    return jsonify({'users': upstream[key]}), 200
 
         if isinstance(upstream, list):
             return jsonify({'users': upstream}), 200
 
-        # Fallback: upstream returned something unexpected — return it wrapped
+        # Fallback: wrap whatever came back
         return jsonify({'users': [], 'raw': upstream}), 200
 
-    except urllib.error.HTTPError as e:
-        body = ''
-        try:
-            body = e.read().decode('utf-8')
-        except Exception:
-            body = str(e)
-        app.logger.error(f'Upstream HTTPError fetching app-users ({app_slug}): {e} body={body}')
-        # Return 200 so frontend still gets a JSON payload it can display;
-        # the caller can look at "error" property.
-        return jsonify({'error': f'Upstream HTTPError {getattr(e, "code", "")}', 'detail': body, 'users': []}), 200
+    except httpx.HTTPStatusError as e:
+        app.logger.error(f'Upstream HTTP {e.response.status_code} for {app_slug}: {e.response.text[:200]}')
+        return jsonify({'error': f'Upstream returned {e.response.status_code}', 'users': []}), 200
+    except httpx.TimeoutException:
+        app.logger.error(f'Timeout reaching {upstream_url}')
+        return jsonify({'error': 'Request to upstream timed out', 'users': []}), 200
     except Exception as e:
         app.logger.error(f'Error fetching app-users ({app_slug}): {e}', exc_info=True)
         return jsonify({'error': str(e), 'users': []}), 200
