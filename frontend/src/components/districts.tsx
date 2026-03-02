@@ -43,12 +43,21 @@ const APP_OPTIONS: {
   normalise: (raw: AppUser) => AppUser;
 }[] = [
   // ── FPS App ────────────────────────────────────────────────────────────────
+  // Response shape: { details: [ { rep_name, user_role, district_name, police_station, last_login }, ... ] }
   {
     value:    "fps",
     label:    "FPS App",
     url:      "https://coers.iitm.ac.in/fsa/user_det",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
-    extract:  (json) => Array.isArray(json) ? json : (Array.isArray(json.details) ? json.details : []),
+    // Try every common wrapping key — handles both bare array and dict responses
+    extract:  (json: any): AppUser[] => {
+      if (Array.isArray(json))              return json;
+      if (Array.isArray(json?.details))     return json.details;
+      if (Array.isArray(json?.data))        return json.data;
+      if (Array.isArray(json?.users))       return json.users;
+      if (Array.isArray(json?.results))     return json.results;
+      return [];
+    },
     loginKey: ["last_login", "last_seen", "lastLogin", "last_active"],
     columns: [
       { key: "user_name",      label: "User Name"      },
@@ -57,22 +66,30 @@ const APP_OPTIONS: {
       { key: "police_station", label: "Police Station" },
       { key: "last_login",     label: "Last Login"     },
     ],
-    normalise: (d) => ({
-      user_name:      d.rep_name      || d.user_name    || d.name          || d.username || "",
-      user_role:      d.user_role     || d.role         || "",
-      district:       d.district_name || d.district     || "",
-      police_station: d.police_station|| d.ps           || d.policeStation || "",
-      last_login:     d.last_login    || d.last_seen    || d.lastLogin     || "",
+    normalise: (d: AppUser): AppUser => ({
+      user_name:      d.rep_name       || d.user_name    || d.name          || d.username || "",
+      user_role:      d.user_role      || d.role         || "",
+      district:       d.district_name  || d.district     || "",
+      police_station: d.police_station || d.ps           || d.policeStation || "",
+      last_login:     d.last_login     || d.last_seen    || d.lastLogin     || "",
     }),
   },
 
   // ── Sanjaya App ────────────────────────────────────────────────────────────
+  // Response shape: same as FPS — { details: [ { rep_name, user_role, district_name, last_login }, ... ] }
   {
     value:    "sanjaya",
     label:    "Sanjaya App",
     url:      "https://coers.iitm.ac.in/fsa/dss_user_det",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
-    extract:  (json) => Array.isArray(json) ? json : (Array.isArray(json.details) ? json.details : []),
+    extract:  (json: any): AppUser[] => {
+      if (Array.isArray(json))              return json;
+      if (Array.isArray(json?.details))     return json.details;
+      if (Array.isArray(json?.data))        return json.data;
+      if (Array.isArray(json?.users))       return json.users;
+      if (Array.isArray(json?.results))     return json.results;
+      return [];
+    },
     loginKey: ["last_login", "last_seen", "lastLogin", "last_active"],
     columns: [
       { key: "user_name",  label: "User Name"  },
@@ -80,7 +97,7 @@ const APP_OPTIONS: {
       { key: "district",   label: "District"   },
       { key: "last_login", label: "Last Login" },
     ],
-    normalise: (d) => ({
+    normalise: (d: AppUser): AppUser => ({
       user_name:  d.rep_name      || d.user_name || d.name      || d.username || "",
       user_role:  d.user_role     || d.role      || "",
       district:   d.district_name || d.district  || "",
@@ -89,21 +106,26 @@ const APP_OPTIONS: {
   },
 
   // ── TPL App ────────────────────────────────────────────────────────────────
-  // Response shape: { details: { hospitals: [...], admins: [...] }, ... }
+  // Response shape (confirmed via curl):
+  //   { details: { admins: [...], surveys: [...], users: [ {user_id, hospname, state_name, district_name, ...} ] } }
   {
     value:    "tpl",
     label:    "TPL App",
     url:      "https://coers.iitm.ac.in/baseline/export_all_data",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
-    extract:  (json) => Array.isArray(json?.details?.users) ? json.details.users : [],
-    loginKey: [], // no last_login field — period filter is skipped for TPL
+    extract:  (json: any): AppUser[] => {
+      // details is an object; the users list sits at details.users
+      if (Array.isArray(json?.details?.users)) return json.details.users;
+      return [];
+    },
+    loginKey: [], // TPL has no last_login field — skip period filter entirely
     columns: [
       { key: "user_id",       label: "User ID"       },
       { key: "state",         label: "State"         },
       { key: "district",      label: "District"      },
       { key: "hospital_name", label: "Hospital Name" },
     ],
-    normalise: (d) => ({
+    normalise: (d: AppUser): AppUser => ({
       user_id:       d.user_id       || String(d.userid ?? "") || "",
       state:         d.state_name    || d.state                || "",
       district:      d.district_name || d.district             || "",
@@ -165,8 +187,11 @@ export default function Districts() {
   // Pagination  (0 = show all)
   const [perPage, setPerPage] = useState<number>(10);
 
-  // ── Active app config ─────────────────────────────────────────────────
-  const appConfig = APP_OPTIONS.find(a => a.value === selectedApp) ?? APP_OPTIONS[0];
+  // ── Active app config (memoised so filteredSorted dep array is stable) ──
+  const appConfig = useMemo(
+    () => APP_OPTIONS.find(a => a.value === selectedApp) ?? APP_OPTIONS[0],
+    [selectedApp]
+  );
 
   // ── Derived date range ────────────────────────────────────────────────
   const { start: derivedStart, end: derivedEnd } = useMemo(() => {
@@ -252,7 +277,7 @@ export default function Districts() {
     });
 
     return rows;
-  }, [allUsers, nameSearch, districtSearch, sortCol, sortDir, derivedStart, derivedEnd]);
+  }, [allUsers, appConfig, nameSearch, districtSearch, sortCol, sortDir, derivedStart, derivedEnd]);
 
   const displayedUsers = useMemo(
     () => (perPage === 0 ? filteredSorted : filteredSorted.slice(0, perPage)),
