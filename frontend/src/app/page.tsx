@@ -119,7 +119,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Header />
       
-      <main className="max-w-[90vw] mx-auto p-2 md:p-6">
+      <main className="max-w-[97vw] mx-auto p-2 md:p-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
          {/* <h1 className="text-3xl font-bold tracking-tight">Analytics Dashboard</h1>
           <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
