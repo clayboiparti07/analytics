@@ -48,7 +48,7 @@ const APP_OPTIONS: {
   {
     value:    "fps",
     label:    "FPS App",
-    url:      "https://coers.iitm.ac.in/fsa/user_det",
+    url:      "https://rbg.iitm.ac.in/fps_api/export_all_data",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
     extract:  (json: any): AppUser[] => {
       if (Array.isArray(json))              return json;
@@ -132,7 +132,7 @@ const APP_OPTIONS: {
   {
     value:    "tpl",
     label:    "TPL App",
-    url:      "https://coers.iitm.ac.in/baseline/export_all_data",
+    url:      "https://rbg.iitm.ac.in/bs_ddhi/export_all_data",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
     extract:  (json: any): AppUser[] => {
       if (Array.isArray(json?.details?.users)) return json.details.users;
