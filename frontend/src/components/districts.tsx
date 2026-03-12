@@ -289,6 +289,38 @@ export default function Districts() {
     const fetchUsers = async () => {
       setLoading(true);
       try {
+        const loadInternalFallback = async () => {
+          const fallbackRes = await fetch("/api/analytics?period=day&site_filter=all", {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+          });
+          if (!fallbackRes.ok) throw new Error(`Fallback HTTP ${fallbackRes.status}`);
+          const fallbackJson = await fallbackRes.json();
+          const visitors: AppUser[] = Array.isArray(fallbackJson?.visitor_list)
+            ? fallbackJson.visitor_list
+            : [];
+
+          // Keep Districts usable even when external app-user sources are unavailable.
+          const normalizedFallback = visitors.map((v: AppUser) => ({
+            user_name: v.user_name || v.userid || v.session_id || v.ip_address || "Visitor",
+            user_role: v.user_role || v.device_type || "",
+            designation: v.designation || v.browser || "",
+            state: v.state || v.region || "",
+            district: v.district || v.city || "",
+            police_station: v.police_station || "",
+            account_status: v.account_status || "",
+            stakeholder: v.stakeholder || "",
+            role: v.role || "",
+            hospital_name: v.hospital_name || "",
+            category: v.category || "",
+            user_id: v.user_id || v.userid || "",
+            last_login: String(v.last_login || v.last_seen || v.first_seen || "").split("T")[0].split(" ")[0],
+          }));
+
+          setAllUsers(normalizedFallback);
+          setError(null);
+        };
+
         const res = await fetch("/api/app-users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -301,16 +333,29 @@ export default function Districts() {
         const json = await res.json();
 
         // Check if response indicates failure
-        if (json.error) throw new Error(json.error);
+        if (json.error) {
+          await loadInternalFallback();
+          return;
+        }
         if (json.status && typeof json.status === 'string' && json.status.toLowerCase().includes('failed')) {
-          throw new Error(json.status);
+          await loadInternalFallback();
+          return;
         }
 
-        // Prefer normalized proxy response; fall back to app extractors.
-        const raw: AppUser[] = Array.isArray(json?.users) ? json.users : cfg.extract(json);
+        // Prefer normalized proxy response when non-empty; otherwise try raw payload extractors.
+        const raw: AppUser[] =
+          Array.isArray(json?.users) && json.users.length > 0
+            ? json.users
+            : cfg.extract(json?.raw ?? json);
         if (!Array.isArray(raw)) {
           console.error(`[${cfg.label}] Extract returned non-array:`, raw);
-          throw new Error(`Extract failed: returned ${typeof raw}`);
+          await loadInternalFallback();
+          return;
+        }
+
+        if (raw.length === 0) {
+          await loadInternalFallback();
+          return;
         }
         
         const normalized = raw.map((u) => {

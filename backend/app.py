@@ -27,6 +27,14 @@ CORS(app, origins="*", allow_headers=["Content-Type", "Authorization"], methods=
 # the function gets updated.
 # NOTE: @app.before_first_request was removed in Flask 3.x – use a flag instead.
 _db_init_done = threading.Event()
+_app_users_cache_lock = threading.Lock()
+_app_users_cache = {}
+
+# App-user proxy networking defaults. Read timeout is intentionally generous
+# because upstream endpoints can return large payloads.
+APP_USERS_CONNECT_TIMEOUT_SEC = float(os.environ.get('APP_USERS_CONNECT_TIMEOUT_SEC', '20'))
+APP_USERS_READ_TIMEOUT_SEC = float(os.environ.get('APP_USERS_READ_TIMEOUT_SEC', '120'))
+APP_USERS_RETRIES = int(os.environ.get('APP_USERS_RETRIES', '1'))
 
 @app.before_request
 def _init_db_once():
@@ -597,22 +605,38 @@ def get_app_users():
     app.logger.info(f"app-users → {upstream_url}  start={start_date!r} end={end_date!r}")
 
     try:
-        # verify=False: many internal/institutional servers use self-signed certs;
-        # disabling verification prevents SSL handshake timeouts on the proxy side.
-        with httpx.Client(verify=False, timeout=30) as client:
-            resp = client.post(
-                upstream_url,
-                json=body_data,
-                headers={
-                    'Content-Type': 'application/json',
-                    'Accept': '*/*',
-                    'User-Agent': (
-                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                        'AppleWebKit/537.36 (KHTML, like Gecko) '
-                        'Chrome/144.0.0.0 Safari/537.36'
-                    ),
-                },
-            )
+        timeout = httpx.Timeout(
+            connect=APP_USERS_CONNECT_TIMEOUT_SEC,
+            read=APP_USERS_READ_TIMEOUT_SEC,
+            write=APP_USERS_CONNECT_TIMEOUT_SEC,
+            pool=APP_USERS_CONNECT_TIMEOUT_SEC,
+        )
+
+        # verify=False: many institutional servers use custom certificates.
+        # We retry once for transient network hiccups.
+        resp = None
+        with httpx.Client(verify=False, timeout=timeout, follow_redirects=True) as client:
+            for attempt in range(APP_USERS_RETRIES + 1):
+                try:
+                    resp = client.post(
+                        upstream_url,
+                        json=body_data,
+                        headers={
+                            'Content-Type': 'application/json',
+                            'Accept': '*/*',
+                            'User-Agent': (
+                                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                                'Chrome/144.0.0.0 Safari/537.36'
+                            ),
+                        },
+                    )
+                    break
+                except (httpx.TimeoutException, httpx.ConnectError):
+                    if attempt >= APP_USERS_RETRIES:
+                        raise
+                    app.logger.warning(f"Retrying app-users request for {app_slug}: attempt {attempt + 2}")
+
         resp.raise_for_status()
         upstream = resp.json()
         app.logger.info(f"Upstream OK ({len(resp.content)} bytes)")
@@ -620,6 +644,28 @@ def get_app_users():
         # Normalise upstream response into a `users` array the frontend can consume
         users = []
         if isinstance(upstream, dict):
+            details = upstream.get('details')
+
+            # Some endpoints return details as an object with role-specific arrays.
+            if isinstance(details, dict):
+                merged = []
+                if isinstance(details.get('users'), list):
+                    merged.extend([{**d, '_role': 'User'} for d in details['users']])
+                if isinstance(details.get('admins'), list):
+                    merged.extend([{**d, '_role': 'Admin'} for d in details['admins']])
+                if isinstance(details.get('surveys'), list):
+                    merged.extend([{**d, '_role': 'Survey'} for d in details['surveys']])
+                if merged:
+                    with _app_users_cache_lock:
+                        _app_users_cache[app_slug] = {'users': merged, 'cached_at': time.time()}
+                    return jsonify({'users': merged}), 200
+
+                if isinstance(details.get('users'), list):
+                    users = details['users']
+                    with _app_users_cache_lock:
+                        _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
+                    return jsonify({'users': users}), 200
+
             if isinstance(upstream.get('details'), list):
                 for d in upstream['details']:
                     users.append({
@@ -631,13 +677,20 @@ def get_app_users():
                         'last_login':     d.get('last_login'),
                         'phone':          d.get('phone_no'),
                     })
+                with _app_users_cache_lock:
+                    _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
                 return jsonify({'users': users}), 200
 
             for key in ('users', 'data', 'results'):
                 if isinstance(upstream.get(key), list):
-                    return jsonify({'users': upstream[key]}), 200
+                    users = upstream[key]
+                    with _app_users_cache_lock:
+                        _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
+                    return jsonify({'users': users}), 200
 
         if isinstance(upstream, list):
+            with _app_users_cache_lock:
+                _app_users_cache[app_slug] = {'users': upstream, 'cached_at': time.time()}
             return jsonify({'users': upstream}), 200
 
         # Fallback: wrap whatever came back
@@ -648,6 +701,12 @@ def get_app_users():
         return jsonify({'error': f'Upstream returned {e.response.status_code}', 'users': []}), 200
     except httpx.TimeoutException:
         app.logger.error(f'Timeout reaching {upstream_url}')
+        with _app_users_cache_lock:
+            cached = _app_users_cache.get(app_slug)
+        if cached and isinstance(cached.get('users'), list):
+            age = int(time.time() - float(cached.get('cached_at', 0)))
+            app.logger.warning(f"Serving cached app-users for {app_slug}; age={age}s")
+            return jsonify({'users': cached['users'], 'warning': f'Served cached data (age {age}s)'}), 200
         return jsonify({'error': 'Request to upstream timed out', 'users': []}), 200
     except Exception as e:
         app.logger.error(f'Error fetching app-users ({app_slug}): {e}', exc_info=True)
