@@ -41,6 +41,7 @@ APP_USERS_READ_TIMEOUT_SEC = float(os.environ.get('APP_USERS_READ_TIMEOUT_SEC', 
 APP_USERS_RETRIES = int(os.environ.get('APP_USERS_RETRIES', '1'))
 APP_USERS_CHUNK_DAYS = int(os.environ.get('APP_USERS_CHUNK_DAYS', '7'))
 APP_USERS_CHUNK_LOOKBACK_DAYS = int(os.environ.get('APP_USERS_CHUNK_LOOKBACK_DAYS', '90'))
+APP_USERS_TRUST_ENV = os.environ.get('APP_USERS_TRUST_ENV', 'true').lower() == 'true'
 
 
 def _post_upstream_json_with_urllib(url, body_data):
@@ -63,13 +64,17 @@ def _post_upstream_json_with_urllib(url, body_data):
     # Match existing behavior: allow non-standard cert chains used by institutional hosts.
     context = ssl._create_unverified_context()
     timeout = APP_USERS_CONNECT_TIMEOUT_SEC + APP_USERS_READ_TIMEOUT_SEC
-    # Bypass system proxy settings so backend talks directly to upstream.
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
-        urllib.request.HTTPSHandler(context=context),
-    )
-    with opener.open(req, timeout=timeout) as response:
-        raw = response.read().decode('utf-8', errors='replace')
+    if APP_USERS_TRUST_ENV:
+        with urllib.request.urlopen(req, timeout=timeout, context=context) as response:
+            raw = response.read().decode('utf-8', errors='replace')
+    else:
+        # Optional direct mode for environments where proxies break upstream routing.
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            urllib.request.HTTPSHandler(context=context),
+        )
+        with opener.open(req, timeout=timeout) as response:
+            raw = response.read().decode('utf-8', errors='replace')
     return json.loads(raw)
 
 @app.before_request
@@ -730,7 +735,7 @@ def _fetch_upstream_with_httpx(url, body_data):
         write=APP_USERS_CONNECT_TIMEOUT_SEC,
         pool=APP_USERS_CONNECT_TIMEOUT_SEC,
     )
-    with httpx.Client(verify=False, timeout=timeout, follow_redirects=True, trust_env=False) as client:
+    with httpx.Client(verify=False, timeout=timeout, follow_redirects=True, trust_env=APP_USERS_TRUST_ENV) as client:
         resp = None
         for attempt in range(APP_USERS_RETRIES + 1):
             try:

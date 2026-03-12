@@ -39,10 +39,7 @@ services:
       - APP_USERS_RETRIES=1
       - APP_USERS_CHUNK_DAYS=7
       - APP_USERS_CHUNK_LOOKBACK_DAYS=90
-      - HTTP_PROXY=
-      - HTTPS_PROXY=
-      - ALL_PROXY=
-      - NO_PROXY=localhost,127.0.0.1,db
+      - APP_USERS_TRUST_ENV=true
     depends_on:
       db:
         condition: service_healthy
