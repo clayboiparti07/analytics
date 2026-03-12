@@ -34,6 +34,13 @@ services:
       - DB_PORT=5432
       - PORT=5000
       - FLASK_ENV=production
+      - APP_USERS_CONNECT_TIMEOUT_SEC=20
+      - APP_USERS_READ_TIMEOUT_SEC=120
+      - APP_USERS_RETRIES=1
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - ALL_PROXY=
+      - NO_PROXY=localhost,127.0.0.1,db
     depends_on:
       db:
         condition: service_healthy

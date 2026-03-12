@@ -60,7 +60,12 @@ def _post_upstream_json_with_urllib(url, body_data):
     # Match existing behavior: allow non-standard cert chains used by institutional hosts.
     context = ssl._create_unverified_context()
     timeout = APP_USERS_CONNECT_TIMEOUT_SEC + APP_USERS_READ_TIMEOUT_SEC
-    with urllib.request.urlopen(req, timeout=timeout, context=context) as response:
+    # Bypass system proxy settings so backend talks directly to upstream.
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        urllib.request.HTTPSHandler(context=context),
+    )
+    with opener.open(req, timeout=timeout) as response:
         raw = response.read().decode('utf-8', errors='replace')
     return json.loads(raw)
 
@@ -583,13 +588,117 @@ def log_time():
 # App-specific user-detail endpoints (proxied to external FSA service)
 # ---------------------------------------------------------------------------
 
-# Registry of app slugs → upstream POST endpoint
+# Registry of app slugs -> upstream POST endpoint(s).
+# If one host returns 5xx/timeout, we fail over to the next host.
 APP_USER_ENDPOINTS = {
-    'fps': 'https://coers.iitm.ac.in/fsa/user_det',
-    'sanjaya': 'https://rbg.iitm.ac.in/get_details/export_all_data',
-    'tpl': 'https://rbg.iitm.ac.in/bs_ddhi/export_all_data',
-    # add more app entries here: 'myapp': 'https://...',
+    'fps': ['https://coers.iitm.ac.in/fsa/user_det'],
+    'sanjaya': ['https://rbg.iitm.ac.in/get_details/export_all_data'],
+    'tpl': ['https://rbg.iitm.ac.in/bs_ddhi/export_all_data'],
+    # add more app entries here: 'myapp': ['https://...'],
 }
+
+
+def _normalize_upstream_users(upstream):
+    """Normalize upstream payload to a users array, or None if shape is unknown."""
+    if isinstance(upstream, dict):
+        details = upstream.get('details')
+
+        if isinstance(details, dict):
+            merged = []
+            if isinstance(details.get('users'), list):
+                merged.extend([{**d, '_role': 'User'} for d in details['users']])
+            if isinstance(details.get('admins'), list):
+                merged.extend([{**d, '_role': 'Admin'} for d in details['admins']])
+            if isinstance(details.get('surveys'), list):
+                merged.extend([{**d, '_role': 'Survey'} for d in details['surveys']])
+            if merged:
+                return merged
+            if isinstance(details.get('users'), list):
+                return details['users']
+
+        if isinstance(upstream.get('details'), list):
+            users = []
+            for d in upstream['details']:
+                users.append({
+                    'userid': d.get('userid'),
+                    'user_name': d.get('rep_name') or d.get('name') or d.get('username') or '',
+                    'user_role': d.get('user_role') or d.get('role'),
+                    'district': d.get('district_name') or d.get('district'),
+                    'police_station': d.get('police_station') or d.get('ps') or None,
+                    'last_login': d.get('last_login'),
+                    'phone': d.get('phone_no'),
+                })
+            return users
+
+        for key in ('users', 'data', 'results'):
+            if isinstance(upstream.get(key), list):
+                return upstream[key]
+
+    if isinstance(upstream, list):
+        return upstream
+
+    return None
+
+
+def _bounded_date_window(days=30):
+    """Return YYYY-MM-DD start/end strings for a bounded fallback window."""
+    now = datetime.now(timezone.utc)
+    end = now.strftime('%Y-%m-%d')
+    start = (now - timedelta(days=days)).strftime('%Y-%m-%d')
+    return {'start_date': start, 'end_date': end}
+
+
+def _fetch_upstream_with_httpx(url, body_data):
+    timeout = httpx.Timeout(
+        connect=APP_USERS_CONNECT_TIMEOUT_SEC,
+        read=APP_USERS_READ_TIMEOUT_SEC,
+        write=APP_USERS_CONNECT_TIMEOUT_SEC,
+        pool=APP_USERS_CONNECT_TIMEOUT_SEC,
+    )
+    with httpx.Client(verify=False, timeout=timeout, follow_redirects=True, trust_env=False) as client:
+        resp = None
+        for attempt in range(APP_USERS_RETRIES + 1):
+            try:
+                resp = client.post(
+                    url,
+                    json=body_data,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'Accept': '*/*',
+                        'User-Agent': (
+                            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                            'AppleWebKit/537.36 (KHTML, like Gecko) '
+                            'Chrome/144.0.0.0 Safari/537.36'
+                        ),
+                    },
+                )
+                break
+            except (httpx.TimeoutException, httpx.ConnectError):
+                if attempt >= APP_USERS_RETRIES:
+                    raise
+                app.logger.warning(f"Retrying app-users request to {url}: attempt {attempt + 2}")
+
+    if resp is None:
+        raise RuntimeError('No response from upstream')
+
+    resp.raise_for_status()
+    text = resp.text or ''
+    content_type = (resp.headers.get('content-type') or '').lower()
+
+    # Some 5xx paths return HTML error pages; treat that as a failed upstream.
+    if 'json' not in content_type and '<html' in text[:2048].lower():
+        raise ValueError('Upstream returned HTML instead of JSON')
+
+    return resp.json()
+
+
+def _fetch_upstream_json(url, body_data):
+    """Fetch JSON from upstream using httpx, then urllib as fallback."""
+    try:
+        return _fetch_upstream_with_httpx(url, body_data)
+    except Exception as first_error:
+        app.logger.warning(f"httpx failed for {url}: {first_error}")
+        return _post_upstream_json_with_urllib(url, body_data)
 
 
 @app.route('/api/app-users', methods=['GET', 'POST', 'OPTIONS'])
@@ -625,165 +734,51 @@ def get_app_users():
     # caused "data/time field value out of range" errors when the range
     # included the current day.  Leaving the values empty avoids the problem
     # and keeps the behaviour consistent with the curl example.
-    upstream_url = APP_USER_ENDPOINTS.get(app_slug)
-    if not upstream_url:
+    upstream_urls = APP_USER_ENDPOINTS.get(app_slug)
+    if not upstream_urls:
         return jsonify({'error': f'Unknown app: {app_slug}', 'users': []}), 400
 
-    body_data = {'start_date': start_date, 'end_date': end_date}
-    app.logger.info(f"app-users → {upstream_url}  start={start_date!r} end={end_date!r}")
+    if isinstance(upstream_urls, str):
+        upstream_urls = [upstream_urls]
 
-    try:
-        timeout = httpx.Timeout(
-            connect=APP_USERS_CONNECT_TIMEOUT_SEC,
-            read=APP_USERS_READ_TIMEOUT_SEC,
-            write=APP_USERS_CONNECT_TIMEOUT_SEC,
-            pool=APP_USERS_CONNECT_TIMEOUT_SEC,
-        )
+    primary_body = {'start_date': start_date, 'end_date': end_date}
+    body_candidates = [primary_body]
+    if not start_date and not end_date:
+        # When "all" causes upstream 504, retry bounded external range.
+        body_candidates.append(_bounded_date_window(30))
 
-        # verify=False: many institutional servers use custom certificates.
-        # We retry once for transient network hiccups.
-        resp = None
-        with httpx.Client(verify=False, timeout=timeout, follow_redirects=True) as client:
-            for attempt in range(APP_USERS_RETRIES + 1):
-                try:
-                    resp = client.post(
-                        upstream_url,
-                        json=body_data,
-                        headers={
-                            'Content-Type': 'application/json',
-                            'Accept': '*/*',
-                            'User-Agent': (
-                                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                                'AppleWebKit/537.36 (KHTML, like Gecko) '
-                                'Chrome/144.0.0.0 Safari/537.36'
-                            ),
-                        },
-                    )
-                    break
-                except (httpx.TimeoutException, httpx.ConnectError):
-                    if attempt >= APP_USERS_RETRIES:
-                        raise
-                    app.logger.warning(f"Retrying app-users request for {app_slug}: attempt {attempt + 2}")
+    errors = []
+    for upstream_url in upstream_urls:
+        for body_data in body_candidates:
+            app.logger.info(
+                f"app-users -> {upstream_url} app={app_slug} start={body_data.get('start_date')!r} end={body_data.get('end_date')!r}"
+            )
+            try:
+                upstream = _fetch_upstream_json(upstream_url, body_data)
+                users = _normalize_upstream_users(upstream)
+                if users is None:
+                    errors.append(f"{upstream_url}: unsupported payload shape")
+                    continue
 
-        resp.raise_for_status()
-        upstream = resp.json()
-        app.logger.info(f"Upstream OK ({len(resp.content)} bytes)")
-
-        # Normalise upstream response into a `users` array the frontend can consume
-        users = []
-        if isinstance(upstream, dict):
-            details = upstream.get('details')
-
-            # Some endpoints return details as an object with role-specific arrays.
-            if isinstance(details, dict):
-                merged = []
-                if isinstance(details.get('users'), list):
-                    merged.extend([{**d, '_role': 'User'} for d in details['users']])
-                if isinstance(details.get('admins'), list):
-                    merged.extend([{**d, '_role': 'Admin'} for d in details['admins']])
-                if isinstance(details.get('surveys'), list):
-                    merged.extend([{**d, '_role': 'Survey'} for d in details['surveys']])
-                if merged:
-                    with _app_users_cache_lock:
-                        _app_users_cache[app_slug] = {'users': merged, 'cached_at': time.time()}
-                    return jsonify({'users': merged}), 200
-
-                if isinstance(details.get('users'), list):
-                    users = details['users']
-                    with _app_users_cache_lock:
-                        _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
-                    return jsonify({'users': users}), 200
-
-            if isinstance(upstream.get('details'), list):
-                for d in upstream['details']:
-                    users.append({
-                        'userid':         d.get('userid'),
-                        'user_name':      d.get('rep_name') or d.get('name') or d.get('username') or '',
-                        'user_role':      d.get('user_role') or d.get('role'),
-                        'district':       d.get('district_name') or d.get('district'),
-                        'police_station': d.get('police_station') or d.get('ps') or None,
-                        'last_login':     d.get('last_login'),
-                        'phone':          d.get('phone_no'),
-                    })
                 with _app_users_cache_lock:
                     _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
-                return jsonify({'users': users}), 200
 
-            for key in ('users', 'data', 'results'):
-                if isinstance(upstream.get(key), list):
-                    users = upstream[key]
-                    with _app_users_cache_lock:
-                        _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
-                    return jsonify({'users': users}), 200
+                response = {'users': users}
+                if body_data is not primary_body:
+                    response['warning'] = 'Loaded bounded 30-day external data due to upstream timeout/5xx on full range.'
+                return jsonify(response), 200
+            except Exception as e:
+                errors.append(f"{upstream_url}: {e}")
+                app.logger.error(f"App-users fetch failed for {app_slug} via {upstream_url}: {e}")
 
-        if isinstance(upstream, list):
-            with _app_users_cache_lock:
-                _app_users_cache[app_slug] = {'users': upstream, 'cached_at': time.time()}
-            return jsonify({'users': upstream}), 200
+    with _app_users_cache_lock:
+        cached = _app_users_cache.get(app_slug)
+    if cached and isinstance(cached.get('users'), list):
+        age = int(time.time() - float(cached.get('cached_at', 0)))
+        app.logger.warning(f"Serving cached app-users for {app_slug}; age={age}s")
+        return jsonify({'users': cached['users'], 'warning': f'Served cached external data (age {age}s)'}), 200
 
-        # Fallback: wrap whatever came back
-        return jsonify({'users': [], 'raw': upstream}), 200
-
-    except httpx.HTTPStatusError as e:
-        app.logger.error(f'Upstream HTTP {e.response.status_code} for {app_slug}: {e.response.text[:200]}')
-        return jsonify({'error': f'Upstream returned {e.response.status_code}', 'users': []}), 200
-    except httpx.TimeoutException:
-        app.logger.error(f'Timeout reaching {upstream_url}')
-        try:
-            app.logger.warning(f"Attempting urllib fallback for {app_slug}")
-            upstream = _post_upstream_json_with_urllib(upstream_url, body_data)
-            if isinstance(upstream, dict):
-                details = upstream.get('details')
-                if isinstance(details, dict):
-                    merged = []
-                    if isinstance(details.get('users'), list):
-                        merged.extend([{**d, '_role': 'User'} for d in details['users']])
-                    if isinstance(details.get('admins'), list):
-                        merged.extend([{**d, '_role': 'Admin'} for d in details['admins']])
-                    if isinstance(details.get('surveys'), list):
-                        merged.extend([{**d, '_role': 'Survey'} for d in details['surveys']])
-                    if merged:
-                        with _app_users_cache_lock:
-                            _app_users_cache[app_slug] = {'users': merged, 'cached_at': time.time()}
-                        return jsonify({'users': merged}), 200
-                if isinstance(upstream.get('details'), list):
-                    users = []
-                    for d in upstream['details']:
-                        users.append({
-                            'userid': d.get('userid'),
-                            'user_name': d.get('rep_name') or d.get('name') or d.get('username') or '',
-                            'user_role': d.get('user_role') or d.get('role'),
-                            'district': d.get('district_name') or d.get('district'),
-                            'police_station': d.get('police_station') or d.get('ps') or None,
-                            'last_login': d.get('last_login'),
-                            'phone': d.get('phone_no'),
-                        })
-                    with _app_users_cache_lock:
-                        _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
-                    return jsonify({'users': users}), 200
-                for key in ('users', 'data', 'results'):
-                    if isinstance(upstream.get(key), list):
-                        users = upstream[key]
-                        with _app_users_cache_lock:
-                            _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
-                        return jsonify({'users': users}), 200
-            if isinstance(upstream, list):
-                with _app_users_cache_lock:
-                    _app_users_cache[app_slug] = {'users': upstream, 'cached_at': time.time()}
-                return jsonify({'users': upstream}), 200
-        except Exception as fallback_error:
-            app.logger.error(f"urllib fallback failed for {app_slug}: {fallback_error}")
-
-        with _app_users_cache_lock:
-            cached = _app_users_cache.get(app_slug)
-        if cached and isinstance(cached.get('users'), list):
-            age = int(time.time() - float(cached.get('cached_at', 0)))
-            app.logger.warning(f"Serving cached app-users for {app_slug}; age={age}s")
-            return jsonify({'users': cached['users'], 'warning': f'Served cached data (age {age}s)'}), 200
-        return jsonify({'error': 'Request to upstream timed out', 'users': []}), 200
-    except Exception as e:
-        app.logger.error(f'Error fetching app-users ({app_slug}): {e}', exc_info=True)
-        return jsonify({'error': str(e), 'users': []}), 200
+    return jsonify({'error': 'Upstream unavailable', 'details': errors, 'users': []}), 200
 
 
 if __name__ == '__main__':

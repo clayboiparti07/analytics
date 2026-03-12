@@ -213,7 +213,7 @@ export default function Districts() {
   const [error,          setError]          = useState<string | null>(null);
 
   // Local period tabs (self-contained, independent of global period buttons)
-  const [localPeriod,  setLocalPeriod]  = useState<LocalPeriod>("all");
+  const [localPeriod,  setLocalPeriod]  = useState<LocalPeriod>("30d");
   const [customStart,  setCustomStart]  = useState("");
   const [customEnd,    setCustomEnd]    = useState("");
 
