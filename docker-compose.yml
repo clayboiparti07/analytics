@@ -26,6 +26,9 @@ services:
     restart: always
     ports:
       - "5000:5000"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       - DB_HOST=db
       - DB_NAME=analytics_db
@@ -43,6 +46,9 @@ services:
       - APP_USERS_ENABLE_URLLIB_FALLBACK=false
       - APP_USERS_TRUST_ENV=true
       - APP_USERS_FORCE_IPV4=true
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1,db}
     depends_on:
       db:
         condition: service_healthy
