@@ -1,6 +1,9 @@
 import os
 import threading
 import httpx
+import json
+import ssl
+import urllib.request
 import psycopg2
 from psycopg2.extras import RealDictCursor, Json
 from datetime import datetime, timezone, timedelta
@@ -35,6 +38,31 @@ _app_users_cache = {}
 APP_USERS_CONNECT_TIMEOUT_SEC = float(os.environ.get('APP_USERS_CONNECT_TIMEOUT_SEC', '20'))
 APP_USERS_READ_TIMEOUT_SEC = float(os.environ.get('APP_USERS_READ_TIMEOUT_SEC', '120'))
 APP_USERS_RETRIES = int(os.environ.get('APP_USERS_RETRIES', '1'))
+
+
+def _post_upstream_json_with_urllib(url, body_data):
+    """Fallback HTTP client for environments where httpx networking is unstable."""
+    payload = json.dumps(body_data).encode('utf-8')
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'User-Agent': (
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                'Chrome/144.0.0.0 Safari/537.36'
+            ),
+        },
+        method='POST',
+    )
+    # Match existing behavior: allow non-standard cert chains used by institutional hosts.
+    context = ssl._create_unverified_context()
+    timeout = APP_USERS_CONNECT_TIMEOUT_SEC + APP_USERS_READ_TIMEOUT_SEC
+    with urllib.request.urlopen(req, timeout=timeout, context=context) as response:
+        raw = response.read().decode('utf-8', errors='replace')
+    return json.loads(raw)
 
 @app.before_request
 def _init_db_once():
@@ -701,6 +729,51 @@ def get_app_users():
         return jsonify({'error': f'Upstream returned {e.response.status_code}', 'users': []}), 200
     except httpx.TimeoutException:
         app.logger.error(f'Timeout reaching {upstream_url}')
+        try:
+            app.logger.warning(f"Attempting urllib fallback for {app_slug}")
+            upstream = _post_upstream_json_with_urllib(upstream_url, body_data)
+            if isinstance(upstream, dict):
+                details = upstream.get('details')
+                if isinstance(details, dict):
+                    merged = []
+                    if isinstance(details.get('users'), list):
+                        merged.extend([{**d, '_role': 'User'} for d in details['users']])
+                    if isinstance(details.get('admins'), list):
+                        merged.extend([{**d, '_role': 'Admin'} for d in details['admins']])
+                    if isinstance(details.get('surveys'), list):
+                        merged.extend([{**d, '_role': 'Survey'} for d in details['surveys']])
+                    if merged:
+                        with _app_users_cache_lock:
+                            _app_users_cache[app_slug] = {'users': merged, 'cached_at': time.time()}
+                        return jsonify({'users': merged}), 200
+                if isinstance(upstream.get('details'), list):
+                    users = []
+                    for d in upstream['details']:
+                        users.append({
+                            'userid': d.get('userid'),
+                            'user_name': d.get('rep_name') or d.get('name') or d.get('username') or '',
+                            'user_role': d.get('user_role') or d.get('role'),
+                            'district': d.get('district_name') or d.get('district'),
+                            'police_station': d.get('police_station') or d.get('ps') or None,
+                            'last_login': d.get('last_login'),
+                            'phone': d.get('phone_no'),
+                        })
+                    with _app_users_cache_lock:
+                        _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
+                    return jsonify({'users': users}), 200
+                for key in ('users', 'data', 'results'):
+                    if isinstance(upstream.get(key), list):
+                        users = upstream[key]
+                        with _app_users_cache_lock:
+                            _app_users_cache[app_slug] = {'users': users, 'cached_at': time.time()}
+                        return jsonify({'users': users}), 200
+            if isinstance(upstream, list):
+                with _app_users_cache_lock:
+                    _app_users_cache[app_slug] = {'users': upstream, 'cached_at': time.time()}
+                return jsonify({'users': upstream}), 200
+        except Exception as fallback_error:
+            app.logger.error(f"urllib fallback failed for {app_slug}: {fallback_error}")
+
         with _app_users_cache_lock:
             cached = _app_users_cache.get(app_slug)
         if cached and isinstance(cached.get('users'), list):
