@@ -111,11 +111,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
-            <p className="font-semibold">Demo Accounts</p>
-            <p>`super.admin` has full access including Excel export.</p>
-            <p>`admin.viewer` has view-only dashboard access.</p>
-          </div>
+
         </CardContent>
       </Card>
     </div>
