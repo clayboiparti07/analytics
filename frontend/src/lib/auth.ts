@@ -20,18 +20,18 @@ const AUTH_STORAGE_KEY = "dashboardAuthSession";
 // Passwords are stored as salted hashes (demo-only client-side auth).
 const CREDENTIALS: CredentialRecord[] = [
   {
-    username: "super.admin",
+    username: "vb",
     displayName: "Super Admin",
     role: "super_admin",
     salt: "rbg-super-2026",
-    passwordHash: "2a63c9442ad783b6bd6744a2e00d7fbec483014220c680c848db69e510aecfc0",
+    passwordHash: "16330cd5a841844cec13f77d5e66c04fb5f16c789b1a55c31b6f218625c2d3ca",
   },
   {
-    username: "admin.viewer",
+    username: "coersuser",
     displayName: "Admin",
     role: "admin",
     salt: "rbg-admin-2026",
-    passwordHash: "77b25ed790568211a731954d9121d1aa244d3197e700205d23d7d495823803d5",
+    passwordHash: "89db6e2a65d530933948be1d0482bf7100939a27751aa1d501ef132aea54bfa7",
   },
 ];
 
