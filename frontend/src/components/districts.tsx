@@ -212,11 +212,21 @@ function periodToDates(period: LocalPeriod): { start: string; end: string } {
 // ── Component ──────────────────────────────────────────────────────────────
 interface DistrictsProps {
   canExport?: boolean;
+  allowedApps?: string[];
 }
 
-export default function Districts({ canExport = false }: DistrictsProps) {
+export default function Districts({ canExport = false, allowedApps = [] }: DistrictsProps) {
+  const normalizedAllowedApps = useMemo(
+    () => (allowedApps.length > 0 ? allowedApps : APP_OPTIONS.map((app) => app.value)),
+    [allowedApps]
+  );
+  const availableApps = useMemo(
+    () => APP_OPTIONS.filter((app) => normalizedAllowedApps.includes(app.value)),
+    [normalizedAllowedApps]
+  );
+
   // ── State ─────────────────────────────────────────────────────────────
-  const [selectedApp,    setSelectedApp]    = useState("fps");
+  const [selectedApp,    setSelectedApp]    = useState(availableApps[0]?.value ?? "fps");
   const [allUsers,       setAllUsers]       = useState<AppUser[]>([]);
   const [loading,        setLoading]        = useState(false);
   const [error,          setError]          = useState<string | null>(null);
@@ -240,9 +250,15 @@ export default function Districts({ canExport = false }: DistrictsProps) {
 
   // ── Active app config (memoised so filteredSorted dep array is stable) ──
   const appConfig = useMemo(
-    () => APP_OPTIONS.find(a => a.value === selectedApp) ?? APP_OPTIONS[0],
-    [selectedApp]
+    () => availableApps.find((app) => app.value === selectedApp) ?? availableApps[0] ?? APP_OPTIONS[0],
+    [selectedApp, availableApps]
   );
+
+  useEffect(() => {
+    if (!normalizedAllowedApps.includes(selectedApp)) {
+      setSelectedApp(availableApps[0]?.value ?? "fps");
+    }
+  }, [selectedApp, normalizedAllowedApps, availableApps]);
 
   // ── Reset all dropdown filters when the app changes ──────────────────
   useEffect(() => {
@@ -509,7 +525,7 @@ export default function Districts({ canExport = false }: DistrictsProps) {
             <Select value={selectedApp} onValueChange={v => { setSelectedApp(v); }}>
               <SelectTrigger><SelectValue placeholder="Select app" /></SelectTrigger>
               <SelectContent>
-                {APP_OPTIONS.map(a => (
+                {availableApps.map(a => (
                   <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
                 ))}
               </SelectContent>
