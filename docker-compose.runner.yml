@@ -1,0 +1,21 @@
+version: '3.8'
+
+# Example GitHub Actions self-hosted runner as a Docker service.
+# Replace OWNER/REPO and set RUNNER_TOKEN at runtime or in an env file.
+
+services:
+  github-runner:
+    image: ghcr.io/actions/runner:latest
+    restart: unless-stopped
+    environment:
+      RUNNER_REPO: "https://github.com/OWNER/REPO"
+      RUNNER_TOKEN: "__REPLACE_WITH_TOKEN__"
+      RUNNER_LABELS: "prod"
+      RUNNER_NAME: "runner-1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner_data:/runner
+    tty: true
+
+volumes:
+  runner_data:

@@ -1,0 +1,32 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - prod
+  workflow_dispatch:
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, prod]
+
+    steps:
+      - name: Check out prod branch
+        uses: actions/checkout@v4
+        with:
+          ref: prod
+
+      - name: Build and restart the stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker compose up --help | grep -q -- '--wait'; then
+            docker compose up -d --build --wait
+          else
+            docker compose up -d --build
+          fi
+          docker image prune -f

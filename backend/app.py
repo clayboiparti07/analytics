@@ -33,6 +33,10 @@ def _init_db_once():
 def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'ok'}), 200
+
 @app.route('/login')
 def serve_login():
     """Serve login page"""

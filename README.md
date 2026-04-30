@@ -141,6 +141,80 @@ This project is pre-configured for deployment on Vercel.
       ```
     - Follow the on-screen prompts. Vercel will automatically detect the `vercel.json` configuration and deploy the application. You will need to set the `SUPABASE_URL` and `SUPABASE_KEY` environment variables during the setup process.
 
+## Production CI/CD
+
+The repository is now wired for automatic production deploys from GitHub.
+
+1. Push to the `prod` branch.
+2. GitHub Actions sends the job to a self-hosted runner installed on your local VM.
+3. The runner checks out the `prod` branch, runs `docker compose up -d --build --remove-orphans`, and waits for the containers to become healthy.
+
+Before enabling it, install a self-hosted GitHub Actions runner on the VM and give it the `prod` label so this workflow can target it.
+
+The runner machine must already have Docker and Docker Compose available.
+
+### Ubuntu VM runner setup
+
+Run these commands on your Ubuntu VM. Replace `OWNER/REPO` with your GitHub repository and use the runner version GitHub shows for the latest Linux x64 release if you want to pin a specific version.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y curl tar git
+
+mkdir -p ~/actions-runner && cd ~/actions-runner
+curl -o actions-runner-linux-x64.tar.gz -L https://github.com/actions/runner/releases/download/v2.323.0/actions-runner-linux-x64-2.323.0.tar.gz
+tar xzf ./actions-runner-linux-x64.tar.gz
+
+./config.sh --url https://github.com/OWNER/REPO --token YOUR_RUNNER_REGISTRATION_TOKEN --labels prod --unattended
+
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+If you prefer to reconfigure an existing runner later, stop the service first:
+
+```bash
+sudo ./svc.sh stop
+./config.sh remove --token YOUR_REMOVAL_TOKEN
+```
+
+If Docker requires elevated permissions on the VM, add the runner user to the docker group and log out/in once:
+
+```bash
+sudo usermod -aG docker $USER
+
+### Run DB as a permanent container (recommended)
+
+To ensure the Postgres database container is persistent and not recreated by normal deploys, run the DB with the dedicated compose file once on the VM. This keeps the DB service out of the regular deploy flow.
+
+```bash
+# Start the DB as a long-running service (do this once)
+docker compose -f docker-compose.db.yml up -d
+
+# Verify it's healthy
+docker compose -f docker-compose.db.yml ps
+```
+
+The `docker-compose.db.yml` file contains the same DB configuration as the main compose but is intended to be started and managed separately. It uses a named volume (`postgres_data`) so the database files persist across container restarts.
+
+### Run GitHub Actions runner inside Docker on the same host
+
+You can run the self-hosted Actions runner as a container so it coexists with your app stack. Edit `docker-compose.runner.yml`, replace `OWNER/REPO` and `__REPLACE_WITH_TOKEN__` (get the token from GitHub when you add a new runner), then start it:
+
+```bash
+docker compose -f docker-compose.runner.yml up -d
+```
+
+Notes:
+- The runner service mounts the Docker socket so CI jobs can run Docker commands (this is convenient but increases risk; only use on trusted hosts).
+- Make sure the runner has the `prod` label (the compose file sets `RUNNER_LABELS=prod`).
+- Obtain the runner token from GitHub: Repository > Settings > Actions > Runners > New self-hosted runner.
+
+### Deploy workflow behavior
+
+The production workflow now runs on a self-hosted runner (label `prod`) and no longer passes `--remove-orphans`, so it will not forcibly remove containers such as the DB container started from `docker-compose.db.yml`.
+```
+
 ## License
 
 This project is open-source and available under the [MIT License](LICENSE).
