@@ -47,16 +47,7 @@ export default function DashboardPage() {
     const currentSession = getStoredSession();
 
     if (!currentSession) {
-      // TODO: login temporarily disabled
-      // router.replace("/login");
-      const bypassSession: AuthSession = {
-        username: "vb",
-        displayName: "Super",
-        role: "super_admin",
-        allowedApps: ["fps", "tpl", "sanjaya"],
-        loginAt: new Date().toISOString(),
-      };
-      setSession(bypassSession);
+      router.replace("/login");
       setAuthReady(true);
       return;
     }
