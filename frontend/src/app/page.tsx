@@ -51,7 +51,7 @@ export default function DashboardPage() {
       // router.replace("/login");
       const bypassSession: AuthSession = {
         username: "vb",
-        displayName: "Super admin",
+        displayName: "SuperAdmin",
         role: "super_admin",
         allowedApps: ["fps", "tpl", "sanjaya"],
         loginAt: new Date().toISOString(),
