@@ -136,8 +136,8 @@ const APP_OPTIONS: {
   // ── TPL App ────────────────────────────────────────────────────────────────
   // Fields: user_id, userid, hospname, category, state_name, district_name, last_login, user_status
   {
-    value:    "netrat",
-    label:    "netrat App",
+    value:    "tpl",
+    label:    "TPL App",
     url:      "https://rbg.iitm.ac.in/bs_ddhi/export_all_data",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
     extract:  (json: any): AppUser[] => {
