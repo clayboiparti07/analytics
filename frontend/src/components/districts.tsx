@@ -186,7 +186,7 @@ const APP_OPTIONS: {
       if (!json?.details?.users) return [];
       return json.details.users; 
     },
-    loginKey: ["last_login_time"], // TODO: Update to match NetRat's exact login timestamp field name
+    loginKey: ["last_login"],
     columns: [
       // TODO: Define the columns you want to display for NetRat in the UI
       { key: "user_id",      label: "User ID" },
