@@ -38,6 +38,7 @@ const APP_OPTIONS: {
   value: string;
   label: string;
   url: string;
+  method?: "GET" | "POST";
   payload: (start: string, end: string) => Record<string, string>;
   extract: (json: any) => AppUser[];
   loginKey: string[];
@@ -180,8 +181,9 @@ const APP_OPTIONS: {
     value:      "netrat",
     label:      "NetRat",
     // Use our backend proxy so we don't hit CORS issues and to strip sensitive fields
-    url:        "/api/netrat",
-    payload:    (_start, _end) => ({}),
+    url:        "https://netrat.coers.in/bkd/get_user_log",
+    method:     "GET",
+    payload:    (start, end) => ({ start_date: start, end_date: end }),
     extract:    (json: any): AppUser[] => {
       if (Array.isArray(json)) return json;
       if (Array.isArray(json?.users)) return json.users;
@@ -379,11 +381,24 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
     const fetchUsers = async () => {
       setLoading(true);
       try {
-        const res = await fetch(cfg.url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(cfg.payload(derivedStart, derivedEnd)),
-        });
+        // Support per-app HTTP method; for GET we append payload as query params
+        const method = (cfg as any).method ?? "POST";
+        let fetchUrl = cfg.url;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const payload = cfg.payload(derivedStart, derivedEnd) || {};
+        const fetchOptions: any = { method };
+
+        if (method === "GET") {
+          const params = new URLSearchParams();
+          Object.entries(payload).forEach(([k, v]) => { if (v !== undefined && v !== null && String(v) !== "") params.append(k, String(v)); });
+          const q = params.toString();
+          if (q) fetchUrl = fetchUrl + (fetchUrl.includes("?") ? "&" : "?") + q;
+        } else {
+          fetchOptions.headers = headers;
+          fetchOptions.body = JSON.stringify(payload);
+        }
+
+        const res = await fetch(fetchUrl, fetchOptions);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
