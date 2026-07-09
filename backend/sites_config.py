@@ -29,6 +29,11 @@ SITES = {
         "name": "RATH",
         "url": "https://rbg.iitm.ac.in/RATH",
         "description": "RATH application"
+    },
+    "netrat": {
+        "name": "NETRAT",
+        "url": "https://netrat.coers.in/bkd/get_user_log",
+        "description": "NETRAT application"
     }
 }
 

@@ -442,6 +442,73 @@ def log_time():
             conn.close()
 
 
+@app.route('/api/netrat', methods=['GET', 'OPTIONS'])
+def get_netrat():
+    """Proxy endpoint to fetch NetRat user logs and strip out sensitive fields.
+
+    This fetches the upstream NetRat endpoint and returns a normalized JSON
+    object containing a `users` array. Any `session_id` fields are removed to
+    avoid storing or exposing session identifiers in our dashboard.
+    """
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    external_url = os.environ.get('NETRAT_URL', 'https://netrat.coers.in/bkd/get_user_log')
+    try:
+        import requests
+
+        app.logger.info(f"Fetching NetRat data from {external_url}")
+        resp = requests.get(external_url, timeout=10)
+        if not resp.ok:
+            app.logger.error(f"NetRat upstream returned HTTP {resp.status_code}")
+            return jsonify({"error": f"Upstream HTTP {resp.status_code}"}), 502
+
+        data = resp.json()
+
+        # Heuristic extraction of the array of user records
+        users = None
+        if isinstance(data, list):
+            users = data
+        elif isinstance(data, dict):
+            # Common shapes
+            if 'users' in data and isinstance(data['users'], list):
+                users = data['users']
+            elif 'data' in data and isinstance(data['data'], list):
+                users = data['data']
+            elif 'details' in data and isinstance(data['details'], dict):
+                # nested users inside details
+                d = data['details']
+                if isinstance(d.get('users'), list):
+                    users = d.get('users')
+                else:
+                    # try to coerce remaining keys to a flat list
+                    # e.g., get_user_log may return an array directly under details
+                    for v in d.values():
+                        if isinstance(v, list):
+                            users = v
+                            break
+            # fallback: maybe the payload itself is an object representing a single record
+            if users is None:
+                # convert to single-element list if it's an object with expected keys
+                if any(k in data for k in ('id', 'hid', 'last_login', 'hospname')):
+                    users = [data]
+
+        if users is None:
+            app.logger.error("Could not find user list in NetRat response")
+            return jsonify({"error": "Unexpected upstream response format"}), 502
+
+        # Remove session identifiers and return
+        for u in users:
+            if isinstance(u, dict) and 'session_id' in u:
+                u.pop('session_id', None)
+
+        return jsonify({"users": users})
+
+    except Exception as e:
+        app.logger.error(f"Error fetching NetRat data: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     app.run(debug=debug_mode, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

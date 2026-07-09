@@ -179,34 +179,36 @@ const APP_OPTIONS: {
   {
     value:      "netrat",
     label:      "NetRat",
-    url:        "https://netrat.coers.in/bkd/user_list", // TODO: Replace with actual NetRat endpoint
-    payload:    (start, end) => ({ start_date: start, end_date: end }), // TODO: Adjust payload keys if NetRat expects something else (e.g., 'from', 'to')
+    // Use our backend proxy so we don't hit CORS issues and to strip sensitive fields
+    url:        "/api/netrat",
+    payload:    (_start, _end) => ({}),
     extract:    (json: any): AppUser[] => {
-      // TODO: Adjust this path based on the actual NetRat API response format
-      if (!json?.details?.users) return [];
-      return json.details.users; 
+      if (Array.isArray(json)) return json;
+      if (Array.isArray(json?.users)) return json.users;
+      if (Array.isArray(json?.data)) return json.data;
+      return [];
     },
     loginKey: ["last_login"],
     columns: [
-      // TODO: Define the columns you want to display for NetRat in the UI
       { key: "user_id",      label: "User ID" },
-      { key: "user_name",    label: "Name" },
-      { key: "role",         label: "Role" },
-      { key: "region",       label: "Region" },
+      { key: "hospname",     label: "Hospital" },
+      { key: "category",     label: "Category" },
+      { key: "state",        label: "State" },
+      { key: "district",     label: "District" },
       { key: "last_login",   label: "Last Login" },
     ],
     normalise: (d: any): AppUser => ({
-      // TODO: Map the raw NetRat API fields (d) to the column keys defined above
-      user_id:      String(d.id ?? d.user_id ?? ""),
-      user_name:    d.name || d.username || "",
-      role:         d.role || d.user_type || "User",
-      region:       d.region || d.state || "",
-      last_login:   (d.last_login_time || d.last_login || "").split(" ")[0],
+      // Map fields from the NetRat sample response. Use `hid`/`id` if `user_id` is missing.
+      user_id:    String(d.user_id ?? d.hid ?? d.id ?? ""),
+      hospname:   d.hospname || d.hospital || "",
+      category:   d.category || "",
+      state:      d.state || d.state_name || "",
+      district:   d.district || d.district_name || "",
+      last_login: (d.last_login || d.last_login_time || "").split(" ")[0],
     }),
     extraFilters: [
-      // TODO: Add any dropdown filters specific to NetRat
-      { key: "role", label: "Role" },
-      { key: "region", label: "Region" },
+      { key: "category", label: "Category" },
+      { key: "state", label: "State" },
     ],
   },
   // ── Add more apps here ─────────────────────────────────────────────────────
