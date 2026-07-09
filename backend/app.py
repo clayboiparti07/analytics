@@ -442,7 +442,7 @@ def log_time():
             conn.close()
 
 
-@app.route('/api/netrat', methods=['GET', 'OPTIONS'])
+@app.route('/api/netrat', methods=['GET', 'POST', 'OPTIONS'])
 def get_netrat():
     """Proxy endpoint to fetch NetRat user logs and strip out sensitive fields.
 
@@ -457,8 +457,19 @@ def get_netrat():
     try:
         import requests
 
-        app.logger.info(f"Fetching NetRat data from {external_url}")
-        resp = requests.get(external_url, timeout=10)
+        app.logger.info(f"Proxying NetRat request to {external_url} (method={request.method})")
+
+        # If the client posted JSON, forward it as JSON to the upstream
+        if request.method == 'POST':
+            json_body = None
+            try:
+                json_body = request.get_json(force=False, silent=True)
+            except Exception:
+                json_body = None
+            resp = requests.post(external_url, json=(json_body or {}), timeout=15)
+        else:
+            # GET fallback
+            resp = requests.get(external_url, timeout=15)
         if not resp.ok:
             app.logger.error(f"NetRat upstream returned HTTP {resp.status_code}")
             return jsonify({"error": f"Upstream HTTP {resp.status_code}"}), 502
