@@ -216,7 +216,7 @@ const APP_OPTIONS: {
     }),
     extraFilters: [
       { key: "category", label: "Category" },
-      { key: "state", label: "State" },
+      //{ key: "state", label: "State" },
     ],
   },
   // ── Add more apps here ─────────────────────────────────────────────────────
