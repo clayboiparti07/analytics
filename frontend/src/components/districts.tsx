@@ -185,28 +185,34 @@ const APP_OPTIONS: {
     method:     "GET",
     payload:    (start, end) => ({ start_date: start, end_date: end }),
     extract:    (json: any): AppUser[] => {
+      // NetRat returns { details: [ { ... } ] } according to sample
       if (Array.isArray(json)) return json;
+      if (Array.isArray(json?.details)) return json.details;
       if (Array.isArray(json?.users)) return json.users;
       if (Array.isArray(json?.data)) return json.data;
       return [];
     },
     loginKey: ["last_login"],
     columns: [
-      { key: "user_id",      label: "User ID" },
+      { key: "id",           label: "ID" },
       { key: "hospname",     label: "Hospital" },
       { key: "category",     label: "Category" },
       { key: "state",        label: "State" },
       { key: "district",     label: "District" },
       { key: "last_login",   label: "Last Login" },
+      { key: "login_status", label: "Logged In" },
+      { key: "tnc_status",   label: "TnC Accepted" },
     ],
     normalise: (d: any): AppUser => ({
-      // Map fields from the NetRat sample response. Use `hid`/`id` if `user_id` is missing.
-      user_id:    String(d.user_id ?? d.hid ?? d.id ?? ""),
-      hospname:   d.hospname || d.hospital || "",
-      category:   d.category || "",
-      state:      d.state || d.state_name || "",
-      district:   d.district || d.district_name || "",
-      last_login: (d.last_login || d.last_login_time || "").split(" ")[0],
+      // Map fields from the NetRat sample response.
+      id:          String(d.id ?? d.hid ?? ""),
+      hospname:    d.hospname || d.hospital || "",
+      category:    d.category || "",
+      state:       d.state || d.state_name || "",
+      district:    d.district || d.district_name || "",
+      last_login:  toDateOnly(d.last_login || d.last_login_time || ""),
+      login_status: (d.login_status === true || d.login_status === "true") ? "Yes" : (d.login_status === false || d.login_status === "false") ? "No" : "—",
+      tnc_status:   (d.tnc_status === true || d.tnc_status === "true") ? "Yes" : (d.tnc_status === false || d.tnc_status === "false") ? "No" : "—",
     }),
     extraFilters: [
       { key: "category", label: "Category" },
