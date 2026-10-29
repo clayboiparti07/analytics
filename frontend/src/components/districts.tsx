@@ -18,6 +18,34 @@ type LocalPeriod = "24h" | "7d" | "30d" | "all" | "custom";
 // ── Column type ────────────────────────────────────────────────────────────
 type ColDef = { key: string; label: string };
 
+const ACCOUNT_STATUS_COLUMNS: ColDef[] = [
+  { key: "id", label: "ID" },
+  { key: "name", label: "Name" },
+  { key: "email", label: "Email" },
+  { key: "stakeholder", label: "StakeHolder" },
+  { key: "designation", label: "Designation" },
+  { key: "access_level", label: "Access Level" },
+  { key: "state", label: "State" },
+  { key: "district", label: "District" },
+  { key: "userid", label: "Userid" },
+  { key: "created_on", label: "Created On" },
+  { key: "account_status", label: "Account Status" },
+];
+
+const ACCOUNT_STATUS_FIELD_ALIASES: Record<string, string[]> = {
+  id: ["id", "user_id", "userid"],
+  name: ["name", "user_name", "username", "rep_name"],
+  email: ["email", "email_id", "email_address"],
+  stakeholder: ["stakeholder", "stake_holder"],
+  designation: ["designation", "type"],
+  access_level: ["access_level", "accessLevel", "role", "user_role"],
+  state: ["state", "state_name"],
+  district: ["district", "district_name"],
+  userid: ["userid", "user_id", "id"],
+  created_on: ["created_on", "createdOn", "created_at", "createdAt"],
+  account_status: ["account_status", "accountStatus", "user_status", "status"],
+};
+
 // =============================================================================
 // ✏️  APP CONFIG — THE ONLY PLACE YOU NEED TO EDIT TO ADD A NEW APP
 //
@@ -176,6 +204,10 @@ function getField(user: AppUser, ...keys: string[]): string {
   return "—";
 }
 
+function getAccountStatusField(user: AppUser, key: string): string {
+  return getField(user, ...(ACCOUNT_STATUS_FIELD_ALIASES[key] ?? [key]));
+}
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -211,6 +243,7 @@ interface DistrictsProps {
 export default function Districts({ canExport = false }: DistrictsProps) {
   // ── State ─────────────────────────────────────────────────────────────
   const [selectedApp,    setSelectedApp]    = useState("fps");
+  const [selectedView,   setSelectedView]   = useState<"user-details" | "account-status">("user-details");
   const [allUsers,       setAllUsers]       = useState<AppUser[]>([]);
   const [loading,        setLoading]        = useState(false);
   const [error,          setError]          = useState<string | null>(null);
@@ -318,7 +351,7 @@ export default function Districts({ canExport = false }: DistrictsProps) {
         
         const normalized = raw.map((u) => {
           try {
-            return cfg.normalise(u);
+            return { ...u, ...cfg.normalise(u) };
           } catch (err) {
             console.error(`[${cfg.label}] Normalise error on user:`, u, err);
             throw err;
@@ -378,19 +411,27 @@ export default function Districts({ canExport = false }: DistrictsProps) {
     });
 
     rows = [...rows].sort((a: AppUser, b: AppUser) => {
-      const av = getField(a, sortCol).toLowerCase();
-      const bv = getField(b, sortCol).toLowerCase();
+      const av = (selectedView === "account-status"
+        ? getAccountStatusField(a, sortCol)
+        : getField(a, sortCol)).toLowerCase();
+      const bv = (selectedView === "account-status"
+        ? getAccountStatusField(b, sortCol)
+        : getField(b, sortCol)).toLowerCase();
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return sortDir === "asc" ? cmp : -cmp;
     });
 
     return rows;
-  }, [allUsers, appConfig, selectedState, selectedDistrict, dropdownFilters, sortCol, sortDir, derivedStart, derivedEnd]);
+  }, [allUsers, appConfig, selectedState, selectedDistrict, dropdownFilters, sortCol, sortDir, derivedStart, derivedEnd, selectedView]);
 
   const displayedUsers = useMemo(
     () => (perPage === 0 ? filteredSorted : filteredSorted.slice(0, perPage)),
     [filteredSorted, perPage]
   );
+
+  const displayedColumns = selectedView === "account-status"
+    ? ACCOUNT_STATUS_COLUMNS
+    : appConfig.columns;
 
   const exportFilename = useMemo(() => {
     const parts = [sanitizeFilePart(appConfig.label) || selectedApp];
@@ -405,7 +446,11 @@ export default function Districts({ canExport = false }: DistrictsProps) {
   const handleDownloadExcel = () => {
     const rows = filteredSorted.map((user, index) => [
       String(index + 1),
-      ...appConfig.columns.map((column) => getField(user, column.key)),
+      ...displayedColumns.map((column) =>
+        selectedView === "account-status"
+          ? getAccountStatusField(user, column.key)
+          : getField(user, column.key)
+      ),
     ]);
 
     const worksheetRows = [
@@ -414,7 +459,7 @@ export default function Districts({ canExport = false }: DistrictsProps) {
       ["Period", localPeriod],
       ["Rows", String(filteredSorted.length)],
       [],
-      ["#", ...appConfig.columns.map((column) => column.label)],
+      ["#", ...displayedColumns.map((column) => column.label)],
       ...rows,
     ];
 
@@ -470,16 +515,31 @@ export default function Districts({ canExport = false }: DistrictsProps) {
             )}
           </CardTitle>
 
-          {/* App selector */}
-          <div className="w-44">
-            <Select value={selectedApp} onValueChange={v => { setSelectedApp(v); }}>
-              <SelectTrigger><SelectValue placeholder="Select app" /></SelectTrigger>
-              <SelectContent>
-                {APP_OPTIONS.map(a => (
-                  <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap gap-2">
+            {/* View selector */}
+            <div className="w-44">
+              <Label className="sr-only">User table view</Label>
+              <Select value={selectedView} onValueChange={v => setSelectedView(v as "user-details" | "account-status")}>
+                <SelectTrigger aria-label="User table view"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user-details">User Details</SelectItem>
+                  <SelectItem value="account-status">Account Status</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* App selector */}
+            <div className="w-44">
+              <Label className="sr-only">Application</Label>
+              <Select value={selectedApp} onValueChange={v => { setSelectedApp(v); }}>
+                <SelectTrigger aria-label="Application"><SelectValue placeholder="Select app" /></SelectTrigger>
+                <SelectContent>
+                  {APP_OPTIONS.map(a => (
+                    <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
@@ -621,14 +681,14 @@ export default function Districts({ canExport = false }: DistrictsProps) {
           <div className="text-sm text-destructive py-2">Error: {error}</div>
         )}
 
-        {/* Table — columns come from appConfig.columns, fully dynamic */}
+        {/* Table columns change with the selected view. */}
         {!loading && !error && (
           <div className="w-[93%] mx-auto overflow-x-auto rounded-md border">
             <table className="w-full text-sm text-center">
               <thead>
                 <tr className="bg-muted/50">
                   <th className="px-4 py-2 font-semibold text-center">#</th>
-                  {appConfig.columns.map(c => (
+                  {displayedColumns.map(c => (
                     <th
                       key={c.key}
                       className="px-4 py-2 font-semibold text-center cursor-pointer select-none hover:bg-muted/80 transition-colors"
@@ -643,7 +703,7 @@ export default function Districts({ canExport = false }: DistrictsProps) {
               <tbody>
                 {displayedUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={appConfig.columns.length + 1} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={displayedColumns.length + 1} className="px-4 py-8 text-center text-muted-foreground">
                       {allUsers.length === 0
                         ? "No user data available for the selected period."
                         : "No users match the current filters."}
@@ -653,12 +713,14 @@ export default function Districts({ canExport = false }: DistrictsProps) {
                   displayedUsers.map((u, i) => (
                     <tr key={i} className="border-t hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-2 text-center text-muted-foreground">{i + 1}</td>
-                      {appConfig.columns.map((c, ci) => (
+                      {displayedColumns.map((c, ci) => (
                         <td
                           key={c.key}
                           className={`px-4 py-2 text-center${ci === 0 ? " font-medium" : ""}`}
                         >
-                          {getField(u, c.key)}
+                          {selectedView === "account-status"
+                            ? getAccountStatusField(u, c.key)
+                            : getField(u, c.key)}
                         </td>
                       ))}
                     </tr>
