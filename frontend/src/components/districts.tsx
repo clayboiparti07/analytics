@@ -33,20 +33,6 @@ const ACCOUNT_STATUS_COLUMNS: ColDef[] = [
   { key: "account_status", label: "Account Status" },
 ];
 
-const ACCOUNT_STATUS_FIELD_ALIASES: Record<string, string[]> = {
-  id: ["id", "user_id", "userid"],
-  name: ["name", "user_name", "username", "rep_name"],
-  email: ["email", "email_id", "email_address"],
-  stakeholder: ["stakeholder", "stake_holder"],
-  designation: ["designation", "type"],
-  access_level: ["access_level", "accessLevel", "role", "user_role"],
-  state: ["state", "state_name"],
-  district: ["district", "district_name"],
-  userid: ["userid", "user_id", "id"],
-  created_on: ["created_on", "createdOn", "created_at", "createdAt"],
-  account_status: ["account_status", "accountStatus", "user_status", "status"],
-};
-
 // =============================================================================
 // ✏️  APP CONFIG — THE ONLY PLACE YOU NEED TO EDIT TO ADD A NEW APP
 //
@@ -267,10 +253,6 @@ function getField(user: AppUser, ...keys: string[]): string {
   return "—";
 }
 
-function getAccountStatusField(user: AppUser, key: string): string {
-  return getField(user, ...(ACCOUNT_STATUS_FIELD_ALIASES[key] ?? [key]));
-}
-
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -361,6 +343,10 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
   );
 
   useEffect(() => {
+    if (selectedView === "account-status") {
+      return;
+    }
+
     if (!normalizedAllowedApps.includes(selectedApp)) {
       setSelectedApp(availableApps[0]?.value ?? "fps");
     }
@@ -474,7 +460,7 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
       }
     };
     fetchUsers();
-  }, [selectedApp, derivedStart, derivedEnd]);
+  }, [selectedApp, derivedStart, derivedEnd, selectedView]);
 
   // ── Sort helper ───────────────────────────────────────────────────────
   const handleSort = (col: string) => {
@@ -516,18 +502,14 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
     });
 
     rows = [...rows].sort((a: AppUser, b: AppUser) => {
-      const av = (selectedView === "account-status"
-        ? getAccountStatusField(a, sortCol)
-        : getField(a, sortCol)).toLowerCase();
-      const bv = (selectedView === "account-status"
-        ? getAccountStatusField(b, sortCol)
-        : getField(b, sortCol)).toLowerCase();
+      const av = getField(a, sortCol).toLowerCase();
+      const bv = getField(b, sortCol).toLowerCase();
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return sortDir === "asc" ? cmp : -cmp;
     });
 
     return rows;
-  }, [allUsers, appConfig, selectedState, selectedDistrict, dropdownFilters, sortCol, sortDir, derivedStart, derivedEnd, selectedView]);
+  }, [allUsers, appConfig, selectedState, selectedDistrict, dropdownFilters, sortCol, sortDir, derivedStart, derivedEnd]);
 
   const displayedUsers = useMemo(
     () => (perPage === 0 ? filteredSorted : filteredSorted.slice(0, perPage)),
@@ -556,10 +538,6 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
     return filters;
   }, [appConfig, localPeriod, derivedStart, derivedEnd, selectedState, selectedDistrict, dropdownFilters, sortCol, sortDir, filteredSorted.length]);
 
-  const displayedColumns = selectedView === "account-status"
-    ? ACCOUNT_STATUS_COLUMNS
-    : appConfig.columns;
-
   const exportFilename = useMemo(() => {
     const parts = [sanitizeFilePart(appConfig.label) || selectedApp];
     parts.push(`period-${sanitizeFilePart(localPeriod) || "all"}`);
@@ -583,11 +561,7 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
   const handleDownloadExcel = () => {
     const rows = filteredSorted.map((user, index) => [
       String(index + 1),
-      ...displayedColumns.map((column) =>
-        selectedView === "account-status"
-          ? getAccountStatusField(user, column.key)
-          : getField(user, column.key)
-      ),
+      ...appConfig.columns.map((column) => getField(user, column.key)),
     ]);
 
     const worksheetRows = [
@@ -595,7 +569,7 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
       [],
       ...activeFilters.map(filter => [filter.label, filter.value]),
       [],
-      ["#", ...displayedColumns.map((column) => column.label)],
+      ["#", ...appConfig.columns.map((column) => column.label)],
       ...rows,
     ];
 
@@ -723,6 +697,29 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
       </CardHeader>
 
       <CardContent>
+        {selectedView === "account-status" ? (
+          <div className="w-full overflow-x-auto rounded-md border">
+            <table className="w-full min-w-[1100px] text-sm text-center">
+              <thead>
+                <tr className="bg-muted/50">
+                  {ACCOUNT_STATUS_COLUMNS.map((column) => (
+                    <th key={column.key} className="px-4 py-3 font-semibold text-center whitespace-nowrap">
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colSpan={ACCOUNT_STATUS_COLUMNS.length} className="px-4 py-8 text-center text-muted-foreground">
+                    Account status data will appear here when the API is connected.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ) : (
+        <>
         {/* Dropdown filters */}
         <div className="flex flex-wrap gap-3 mb-4">
           {/* State */}
@@ -817,14 +814,14 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
           <div className="text-sm text-destructive py-2">Error: {error}</div>
         )}
 
-        {/* Table columns change with the selected view. */}
+        {/* User details table */}
         {!loading && !error && (
           <div className="w-[93%] mx-auto overflow-x-auto rounded-md border">
             <table className="w-full text-sm text-center">
               <thead>
                 <tr className="bg-muted/50">
                   <th className="px-4 py-2 font-semibold text-center">#</th>
-                  {displayedColumns.map(c => (
+                  {appConfig.columns.map(c => (
                     <th
                       key={c.key}
                       className="px-4 py-2 font-semibold text-center cursor-pointer select-none hover:bg-muted/80 transition-colors"
@@ -839,7 +836,7 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
               <tbody>
                 {displayedUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={displayedColumns.length + 1} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={appConfig.columns.length + 1} className="px-4 py-8 text-center text-muted-foreground">
                       {allUsers.length === 0
                         ? "No user data available for the selected period."
                         : "No users match the current filters."}
@@ -849,14 +846,12 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
                   displayedUsers.map((u, i) => (
                     <tr key={i} className="border-t hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-2 text-center text-muted-foreground">{i + 1}</td>
-                      {displayedColumns.map((c, ci) => (
+                      {appConfig.columns.map((c, ci) => (
                         <td
                           key={c.key}
                           className={`px-4 py-2 text-center${ci === 0 ? " font-medium" : ""}`}
                         >
-                          {selectedView === "account-status"
-                            ? getAccountStatusField(u, c.key)
-                            : getField(u, c.key)}
+                          {getField(u, c.key)}
                         </td>
                       ))}
                     </tr>
@@ -865,6 +860,8 @@ export default function Districts({ canExport = false, allowedApps = [] }: Distr
               </tbody>
             </table>
           </div>
+        )}
+        </>
         )}
       </CardContent>
     </Card>
