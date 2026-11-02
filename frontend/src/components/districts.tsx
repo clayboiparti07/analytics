@@ -65,7 +65,7 @@ const APP_OPTIONS: {
   {
     value:    "fps",
     label:    "FPS App",
-    url:      "https://rbg.iitm.ac.in/fps_api/user_det",
+    url:      "https://fps.coers.in/analytics_api/user_det",
     payload:  (_start, _end) => ({ start_date: "", end_date: "" }),
     extract:  (json: any): AppUser[] => {
       if (Array.isArray(json))              return json;
