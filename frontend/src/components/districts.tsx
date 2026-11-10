@@ -53,7 +53,7 @@ const APP_OPTIONS: {
   label: string;
   url: string;
   method?: "GET" | "POST";
-  payload: (start: string, end: string) => Record<string, string>;
+  payload: (start: string, end: string) => Record<string, string | string[]>;
   extract: (json: any) => AppUser[];
   loginKey: string[];
   columns: ColDef[];
@@ -110,7 +110,13 @@ const APP_OPTIONS: {
     value:    "sanjaya",
     label:    "Sanjaya App",
     url:      "https://sanjayanew.coers.in/bkd/export_all_data",
-    payload:  (start, end) => ({ start_date: start, end_date: end }),
+    payload:  (start, end) => ({
+      req_data: [],
+      start_date: [start],
+      end_date: [end],
+      filter_state: [],
+      filter_dist: [],
+    }),
     extract:  (json: any): AppUser[] => {
       if (!json?.details) return [];
       const result: AppUser[] = [];
