@@ -109,7 +109,7 @@ const APP_OPTIONS: {
   {
     value:    "sanjaya",
     label:    "Sanjaya App",
-    url:      "https://rbg.iitm.ac.in/get_details/export_all_data",
+    url:      "https://sanjayanew.coers.in/bkd/export_all_data",
     payload:  (start, end) => ({ start_date: start, end_date: end }),
     extract:  (json: any): AppUser[] => {
       if (!json?.details) return [];
