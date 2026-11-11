@@ -10,6 +10,7 @@ from flask_cors import CORS
 from user_agents import parse
 import pycountry
 from sites_config import get_sites_list, get_site_url
+from app_users import fetch_app_users
 
 load_dotenv()
 
@@ -130,6 +131,25 @@ def get_sites():
     
     sites = get_sites_list()
     return jsonify({'sites': sites})
+
+
+@app.route('/api/app-users/<app_id>', methods=['POST', 'OPTIONS'])
+def get_app_users(app_id):
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    try:
+        details = fetch_app_users(app_id)
+        return jsonify({
+            'statusCode': '200',
+            'status': 'Successfully fetched app users',
+            'details': details,
+        })
+    except KeyError:
+        return jsonify({'statusCode': '404', 'status': 'Unknown app'}), 404
+    except Exception as exc:
+        app.logger.error("Failed to fetch users for app %s: %s", app_id, exc, exc_info=True)
+        return jsonify({'statusCode': '500', 'status': 'Failed to fetch app users'}), 500
 
 
 @app.route('/api/analytics', methods=['GET', 'OPTIONS'])
