@@ -23,3 +23,24 @@ SOURCE_TABLES = {
     "lms_ssm": os.getenv("LMS_SSM_DB_TABLE", "public.user_table"),
     "odisha_dashboard": os.getenv("ODISHA_DB_TABLE", "public.user_table"),
 }
+
+# A deployment may provide backend/config.local.py outside version control.
+# Values in that file take precedence over these safe defaults.
+try:
+    from config_local import (  # type: ignore
+        SOURCE_DATABASES as LOCAL_DATABASES,
+        SOURCE_DB_HOST as LOCAL_HOST,
+        SOURCE_DB_PASSWORD as LOCAL_PASSWORD,
+        SOURCE_DB_PORT as LOCAL_PORT,
+        SOURCE_DB_USER as LOCAL_USER,
+        SOURCE_TABLES as LOCAL_TABLES,
+    )
+except ModuleNotFoundError:
+    pass
+else:
+    SOURCE_DB_HOST = LOCAL_HOST
+    SOURCE_DB_PORT = LOCAL_PORT
+    SOURCE_DB_USER = LOCAL_USER
+    SOURCE_DB_PASSWORD = LOCAL_PASSWORD
+    SOURCE_DATABASES = LOCAL_DATABASES
+    SOURCE_TABLES = LOCAL_TABLES
