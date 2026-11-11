@@ -16,7 +16,7 @@ from config import (
 
 APP_QUERIES = {
     "thinnai": """
-        SELECT userid AS user_id, user_name AS name, user_type AS role,
+        SELECT user_id, user_name AS name, user_type AS role,
                state, district, user_type AS designation,
                login_time AS last_login, login_status AS account_status,
                enrolled_date AS created_on
