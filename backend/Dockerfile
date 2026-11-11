@@ -8,7 +8,11 @@ RUN npm install -g pnpm
 
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 
-RUN pnpm install --frozen-lockfile
+# pnpm 10 blocks native build scripts by default. These packages are required
+# by the Next.js production build and are the only dependencies allowed to run.
+RUN pnpm install --frozen-lockfile \
+    --allow-build sharp \
+    --allow-build unrs-resolver
 
 COPY frontend/ .
 
