@@ -354,6 +354,82 @@ const APP_OPTIONS: {
     ],
   },
 
+  // ── RCAM App ──────────────────────────────────────────────────────────────
+  {
+    value:    "rcam",
+    label:    "RCAM",
+    url:      "/api/app-users/rcam",
+    method:   "POST",
+    payload:  (_start, _end) => ({}),
+    extract:  (json: any): AppUser[] => Array.isArray(json?.details) ? json.details : [],
+    loginKey: ["last_login"],
+    columns: [
+      { key: "user_id",        label: "User ID"        },
+      { key: "name",           label: "Name"           },
+      { key: "state",          label: "State"          },
+      { key: "district",       label: "District"       },
+      { key: "designation",    label: "Designation"    },
+      { key: "stakeholder",    label: "Stakeholder"    },
+      { key: "account_status", label: "Account Status" },
+      { key: "role",           label: "Role"           },
+      { key: "last_login",     label: "Last Login"     },
+    ],
+    normalise: (d: AppUser): AppUser => ({
+      user_id:        d.user_id || "",
+      name:           d.name || "",
+      state:          d.state || "",
+      district:       d.district || "",
+      designation:    d.designation || "",
+      stakeholder:    "",
+      account_status: d.account_status || "",
+      role:           d.role || "",
+      last_login:     toDateOnly(d.last_login),
+    }),
+    extraFilters: [
+      { key: "designation", label: "Designation" },
+      { key: "role", label: "Role" },
+      { key: "account_status", label: "Account Status" },
+    ],
+  },
+
+  // ── RSA App ───────────────────────────────────────────────────────────────
+  {
+    value:    "rsa",
+    label:    "RSA",
+    url:      "/api/app-users/rsa",
+    method:   "POST",
+    payload:  (_start, _end) => ({}),
+    extract:  (json: any): AppUser[] => Array.isArray(json?.details) ? json.details : [],
+    loginKey: ["last_login"],
+    columns: [
+      { key: "user_id",        label: "User ID"        },
+      { key: "name",           label: "Name"           },
+      { key: "state",          label: "State"          },
+      { key: "district",       label: "District"       },
+      { key: "designation",    label: "Designation"    },
+      { key: "stakeholder",    label: "Stakeholder"    },
+      { key: "account_status", label: "Account Status" },
+      { key: "role",           label: "Role"           },
+      { key: "last_login",     label: "Last Login"     },
+    ],
+    normalise: (d: AppUser): AppUser => ({
+      user_id:        d.user_id || "",
+      name:           d.name || "",
+      state:          d.state || "",
+      district:       d.district || "",
+      designation:    d.designation || "",
+      stakeholder:    "",
+      account_status: d.account_status || "",
+      role:           d.role || "",
+      last_login:     toDateOnly(d.last_login),
+    }),
+    extraFilters: [
+      { key: "designation", label: "Designation" },
+      { key: "role", label: "Role" },
+      { key: "account_status", label: "Account Status" },
+    ],
+  },
+
   // ── Add more apps here ─────────────────────────────────────────────────────
 ];
 

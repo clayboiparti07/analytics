@@ -36,6 +36,19 @@ APP_QUERIES = {
                created_on
         FROM {table}
     """,
+    "rcam": """
+        SELECT userid AS user_id, username AS name, user_type AS role,
+               state, district, designation,
+               last_login, login_status AS account_status, created_on
+        FROM {table}
+    """,
+    "rsa": """
+        SELECT user_id, CONCAT_WS(' ', first_name, last_name) AS name,
+               role, state, district, designation,
+               created_on AS last_login, login_status AS account_status,
+               created_on
+        FROM {table}
+    """,
 }
 
 

@@ -16,12 +16,16 @@ SOURCE_DATABASES = {
     "thinnai": os.getenv("THINNAI_DB_NAME", "thinnai"),
     "lms_ssm": os.getenv("LMS_SSM_DB_NAME", "lms_ssm"),
     "odisha_dashboard": os.getenv("ODISHA_DB_NAME", "odisha_dashboard"),
+    "rcam": os.getenv("RCAM_DB_NAME", "rcam"),
+    "rsa": os.getenv("RSA_DB_NAME", "rsa"),
 }
 
 SOURCE_TABLES = {
     "thinnai": os.getenv("THINNAI_DB_TABLE", "public.user_table"),
     "lms_ssm": os.getenv("LMS_SSM_DB_TABLE", "public.user_table"),
     "odisha_dashboard": os.getenv("ODISHA_DB_TABLE", "public.user_table"),
+    "rcam": os.getenv("RCAM_DB_TABLE", "public.sci_user_table"),
+    "rsa": os.getenv("RSA_DB_TABLE", "public.users"),
 }
 
 # A deployment may provide backend/config.local.py outside version control.
